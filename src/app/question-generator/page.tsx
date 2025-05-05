@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { BrainCircuit, List, Loader2, AlertTriangle } from 'lucide-react'; // Added AlertTriangle
+import { Skeleton } from '@/components/ui/skeleton';
 // Removed import { generateInterviewQuestions, GenerateInterviewQuestionsOutput } from '@/ai/flows/generate-interview-questions';
 
 // Define API URL
