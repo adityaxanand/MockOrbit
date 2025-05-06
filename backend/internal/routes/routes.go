@@ -14,7 +14,7 @@ func SetupRouter() *gin.Engine {
 
 	// CORS Middleware
 	config := cors.DefaultConfig()
-	config.AllowOrigins = []string{"http://localhost:9002"} // Allow frontend origin (adjust port if needed)
+	config.AllowOrigins = []string{"http://localhost:9002, https://mockorbit.vercel.app"} // Allow frontend origin (adjust port if needed)
     config.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 	config.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
     config.AllowCredentials = true // If you need to handle cookies or auth headers
