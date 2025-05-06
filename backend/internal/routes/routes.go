@@ -14,11 +14,19 @@ func SetupRouter() *gin.Engine {
 
 	// CORS Middleware
 	config := cors.DefaultConfig()
-	config.AllowOrigins = []string{"http://localhost:9002, https://mockorbit.vercel.app"} // Allow frontend origin (adjust port if needed)
-    config.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+	config.AllowAllOrigins = true // Allow all origins
+	config.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 	config.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
-    config.AllowCredentials = true // If you need to handle cookies or auth headers
+	config.AllowCredentials = true // If you need to handle cookies or auth headers
 	router.Use(cors.New(config))
+
+	// // CORS Middleware
+	// config := cors.DefaultConfig()
+	// config.AllowOrigins = []string{"http://localhost:9002, https://mockorbit.vercel.app"} // Allow frontend origin (adjust port if needed)
+    // config.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+	// config.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
+    // config.AllowCredentials = true // If you need to handle cookies or auth headers
+	// router.Use(cors.New(config))
 
     // Simple ping endpoint
     router.GET("/ping", func(c *gin.Context) {
