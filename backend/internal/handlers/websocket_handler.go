@@ -19,29 +19,36 @@ import (
 	"go.mongodb.org/mongo-driver/bson"         // Import bson package
 	"go.mongodb.org/mongo-driver/bson/primitive" // Import primitive package
 )
-
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		// Allow frontend origin (adjust as needed for production)
-		allowedOrigin := config.AppConfig.FrontendURL // Use configured Frontend URL
-        allowedOrigins := []string{"http://localhost:9002", "https://mockorbit.vercel.app", "http://another-allowed-origin.com"} // Add multiple allowed origins
-        if allowedOrigin == "" {
-            // Fallback for local development if not set in .env
-            allowedOrigin = "http://localhost:9002"
-            log.Println("Warning: FRONTEND_URL not set, defaulting CORS to", allowedOrigin)
-        }
-        origin := r.Header.Get("Origin")
-        // Allow if origin matches any of the allowed origins or if origin is not specified
-        for _, ao := range allowedOrigins {
-            if origin == ao || origin == "" {
-                return true
-            }
-        }
-        return false
-	},
+    ReadBufferSize:  1024,
+    WriteBufferSize: 1024,
+    CheckOrigin: func(r *http.Request) bool {
+        // Allow all origins
+        return true
+    },
 }
+// var upgrader = websocket.Upgrader{
+// 	ReadBufferSize:  1024,
+// 	WriteBufferSize: 1024,
+// 	CheckOrigin: func(r *http.Request) bool {
+// 		// Allow frontend origin (adjust as needed for production)
+// 		allowedOrigin := config.AppConfig.FrontendURL // Use configured Frontend URL
+//         allowedOrigins := []string{"http://localhost:9002", "https://mockorbit.vercel.app", "http://another-allowed-origin.com"} // Add multiple allowed origins
+//         if allowedOrigin == "" {
+//             // Fallback for local development if not set in .env
+//             allowedOrigin = "http://localhost:9002"
+//             log.Println("Warning: FRONTEND_URL not set, defaulting CORS to", allowedOrigin)
+//         }
+//         origin := r.Header.Get("Origin")
+//         // Allow if origin matches any of the allowed origins or if origin is not specified
+//         for _, ao := range allowedOrigins {
+//             if origin == ao || origin == "" {
+//                 return true
+//             }
+//         }
+//         return false
+// 	},
+// }
 
 // Represents a connected client
 type Client struct {
