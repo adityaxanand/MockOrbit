@@ -12,8 +12,9 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/providers/AuthProvider';
 import type { DateRange } from "react-day-picker";
 import { addDays, format } from "date-fns";
-import { Clock, Users, Book, Send, Loader2 } from 'lucide-react';
+import { Clock, Users, Book, Send, Loader2, Info, SendHorizonal } from 'lucide-react';
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 // Define API URL (consider moving to environment variables)
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
@@ -47,6 +48,7 @@ export default function SchedulePage() {
   const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
   const [peers, setPeers] = useState<Peer[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
+  const [filteredTopics, setFilteredTopics] = useState<Topic[]>([]); // Separate state for filtered topics
 
   // Loading states
   const [isLoadingSlots, setIsLoadingSlots] = useState(true);
@@ -89,7 +91,8 @@ export default function SchedulePage() {
             });
              const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Failed to fetch topics');
-
+            setTopics(data || []); // Ensure data is array
+            setFilteredTopics(data || []); // Initialize filtered topics
             setTopics(data || []); // Ensure data is array
         } catch (error: any) {
             toast({ title: "Error", description: `Could not load topics: ${error.message}`, variant: "destructive" });
@@ -269,65 +272,89 @@ export default function SchedulePage() {
          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Column 1: Calendar and Peers/Topics */}
             <div className="lg:col-span-1 space-y-6">
-                 <Card>
+                <Card>
                     <CardHeader>
                         <CardTitle>Select Date</CardTitle>
                     </CardHeader>
                     <CardContent className="flex justify-center">
-                         <Calendar
+                        <Calendar
                             mode="single"
                             selected={date}
                             onSelect={setDate}
                             className="rounded-md border"
-                            disabled={(d) => d < new Date(new Date().setHours(0,0,0,0))} // Disable past dates
-                         />
+                            disabled={(d) => d < new Date(new Date().setHours(0, 0, 0, 0))} // Disable past dates
+                        />
                     </CardContent>
-                 </Card>
+                </Card>
 
-                 <Card>
-                     <CardHeader>
-                         <CardTitle>Select Peer & Topic</CardTitle>
-                     </CardHeader>
-                     <CardContent className="space-y-4">
-                         {/* Peer Selection */}
-                         <div>
-                            <Label htmlFor="peer-select" className="flex items-center mb-1"><Users className="w-4 h-4 mr-2"/>Select Peer</Label>
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Select Peer & Topic</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        {/* Peer Selection */}
+                        <div>
+                            <Label htmlFor="peer-select" className="flex items-center mb-1">
+                                <Users className="w-4 h-4 mr-2" />
+                                Select Peer
+                            </Label>
                             {isLoadingPeers || isAuthLoading ? (
                                 <Skeleton className="h-10 w-full" />
                             ) : (
-                                <Select onValueChange={setSelectedPeer} value={selectedPeer ?? ""} disabled={peers.length === 0}>
-                                    <SelectTrigger id="peer-select">
-                                        <SelectValue placeholder={peers.length === 0 ? "No peers available" : "Choose a peer..."} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {peers.map(peer => (
-                                            <SelectItem key={peer.id} value={peer.id}>{peer.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            )}
-                         </div>
-                         {/* Topic Selection */}
-                         <div>
-                             <Label htmlFor="topic-select" className="flex items-center mb-1"><Book className="w-4 h-4 mr-2"/>Select Topic</Label>
+                                    <Select onValueChange={setSelectedPeer} value={selectedPeer ?? ""} disabled={peers.length === 0}>
+                                        <SelectTrigger id="peer-select">
+                                            <SelectValue placeholder={peers.length === 0 ? "No peers available" : "Choose a peer..."} />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {peers.map((peer) => (
+                                                <SelectItem key={peer.id} value={peer.id}>
+                                                    {peer.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                )}
+                        </div>
+                        {/* Topic Selection with Search */}
+                        <div>
+                            <Label htmlFor="topic-select" className="flex items-center mb-1">
+                                <Book className="w-4 h-4 mr-2" />
+                                Select Topic
+                            </Label>
                             {isLoadingTopics || isAuthLoading ? (
-                                 <Skeleton className="h-10 w-full" />
+                                <Skeleton className="h-10 w-full" />
                             ) : (
-                                 <Select onValueChange={setSelectedTopic} value={selectedTopic ?? ""} disabled={topics.length === 0}>
-                                    <SelectTrigger id="topic-select">
-                                        <SelectValue placeholder={topics.length === 0 ? "No topics available" : "Choose a topic..."} />
+                                <Select onValueChange={setSelectedTopic} value={selectedTopic ?? ""} disabled={topics.length === 0}>
+                                    <SelectTrigger id="peer-select">
+                                        <SelectValue placeholder={peers.length === 0 ? "No topics available" : "Choose a topic..."} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {topics.map(topic => (
-                                            // Use topic.name as value if it's unique enough, or topic.id if available/needed
-                                            <SelectItem key={topic.id || topic.name} value={topic.name}>{topic.name}</SelectItem>
+                                        <div className="p-2">
+                                            <input
+                                                type="text"
+                                                placeholder="Search topics..."
+                                                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring focus:ring-primary"
+                                                onChange={(e) => {
+                                                    const searchValue = e.target.value.toLowerCase();
+                                                    setFilteredTopics(
+                                                        topics.filter((topic) =>
+                                                            topic.name.toLowerCase().includes(searchValue)
+                                                        )
+                                                    );
+                                                }}
+                                            />
+                                        </div>
+                                        {(filteredTopics.length > 0 ? filteredTopics : topics).map((topic) => (
+                                            <SelectItem key={topic.id || topic.name} value={topic.name}>
+                                                {topic.name}
+                                            </SelectItem>
                                         ))}
                                     </SelectContent>
                                 </Select>
                             )}
-                         </div>
-                     </CardContent>
-                 </Card>
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
 
             {/* Column 2: Time Slots and Confirmation */}
@@ -371,28 +398,35 @@ export default function SchedulePage() {
                  </Card>
 
                  {/* Confirmation and Submit Section */}
-                 <Card>
+                 <Card className="shadow-lg border-border hover:shadow-xl transition-shadow sticky top-24"> {/* Sticky for better UX on scroll */}
                     <CardHeader>
-                       <CardTitle>Confirm & Schedule</CardTitle>
+                       <CardTitle className="text-xl">4. Confirm & Schedule</CardTitle>
+                       <CardDescription>Review your selections before confirming.</CardDescription>
                     </CardHeader>
                      <CardContent className="space-y-3 text-sm">
                          {date && selectedTime && selectedPeer && selectedTopic ? (
                              <>
-                                 <p><strong>Date:</strong> {format(date, 'PPP')}</p>
-                                 <p><strong>Time (UTC):</strong> {selectedTime}</p>
-                                 <p><strong>Peer:</strong> {peers.find(p => p.id === selectedPeer)?.name || '...'}</p>
-                                 <p><strong>Topic:</strong> {selectedTopic}</p>
-                                 <p className="text-xs text-muted-foreground mt-2">
-                                    You are scheduling as: <strong>{activeRole === 'interviewee' ? 'Interviewee' : 'Interviewer'}</strong>
+                                 <div className="font-medium"><span className="text-muted-foreground">Date:</span> {format(date, 'PPP')}</div>
+                                 <div className="font-medium"><span className="text-muted-foreground">Time (UTC):</span> {selectedTime}</div>
+                                 <div className="font-medium"><span className="text-muted-foreground">Peer:</span> {peers.find(p => p.id === selectedPeer)?.name || '...'}</div>
+                                 <div className="font-medium"><span className="text-muted-foreground">Topic:</span> {selectedTopic}</div>
+                                 <p className="text-xs text-muted-foreground pt-2 border-t mt-3">
+                                    You are scheduling as: <strong className="text-primary">{activeRole === 'interviewee' ? 'Interviewee' : 'Interviewer'}</strong>
                                  </p>
                              </>
                          ) : (
-                            <p className="text-muted-foreground italic">Please complete all selections above.</p>
+                            <Alert variant="default" className="bg-muted/50">
+                                <Info className="h-4 w-4" />
+                                <AlertTitle className="text-sm">Awaiting Selections</AlertTitle>
+                                <AlertDescription className="text-xs">
+                                    Please complete all selections (Date, Peer, Topic, Time) to proceed.
+                                </AlertDescription>
+                            </Alert>
                          )}
                     </CardContent>
                     <CardFooter>
-                        <Button onClick={handleSubmit} disabled={!canSubmit} className="w-full sm:w-auto">
-                            {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Scheduling...</> : <><Send className="w-4 h-4 mr-2"/>Schedule Interview</>}
+                        <Button onClick={handleSubmit} disabled={!canSubmit} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground py-3 text-base font-semibold rounded-lg shadow-md hover:shadow-lg transition-all">
+                            {isSubmitting ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Scheduling...</> : <><Send className="w-5 h-5 mr-2"/>Confirm & Schedule</>}
                         </Button>
                     </CardFooter>
                  </Card>

@@ -15,7 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+// import { Label } from "@/components/ui/label"; // FormLabel is preferred with FormField
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Form,
@@ -28,15 +28,15 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Rocket, UserPlus, Loader2 } from 'lucide-react';
+import { UserPlus, Rocket, Loader2 } from 'lucide-react'; // Changed icon
+import { GrTechnology } from 'react-icons/gr';
 
-// Define API URL (consider moving to environment variables)
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
 
 const registerSchema = z.object({
-  name: z.string().min(2, { message: "Name must be at least 2 characters." }),
+  name: z.string().min(2, { message: "Name must be at least 2 characters." }).max(50, {message: "Name cannot exceed 50 characters."}),
   email: z.string().email({ message: "Invalid email address." }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters." }),
+  password: z.string().min(6, { message: "Password must be at least 6 characters." }).max(100, {message: "Password too long."}),
   role: z.enum(["interviewer", "interviewee"], { required_error: "Please select your primary role." }),
 });
 
@@ -66,23 +66,23 @@ export default function RegisterPage() {
         body: JSON.stringify(values),
       });
 
-      const data = await response.json(); // Always try parsing JSON
+      const data = await response.json();
 
       if (!response.ok) {
-         // Use error message from backend response if available
          throw new Error(data.error || `Registration failed with status: ${response.status}`);
       }
 
       toast({
-        title: "Registration Successful",
-        description: "Your account has been created. Please log in.",
+        title: "Registration Successful!",
+        description: "Your Mock Orbit account has been created. Please log in to continue.",
+        variant: "default",
       });
-      router.push('/auth/login'); // Redirect to login page after successful registration
+      router.push('/auth/login');
 
     } catch (error: any) {
       toast({
         title: "Registration Failed",
-        description: error.message || "An unexpected error occurred.",
+        description: error.message || "An unexpected error occurred. Please check your details and try again.",
         variant: "destructive",
       });
     } finally {
@@ -92,27 +92,32 @@ export default function RegisterPage() {
 
   return (
      <div className="flex items-center justify-center min-h-screen bg-secondary p-4">
-       <Card className="w-full max-w-md shadow-lg">
-          <CardHeader className="space-y-1 text-center">
-            <div className="flex justify-center items-center mb-4">
-                <UserPlus className="h-8 w-8 mr-2 text-primary" />
-                <CardTitle className="text-2xl font-bold text-primary">Create an Account</CardTitle>
+       <Card className="w-full max-w-lg shadow-xl border-border"> {/* Increased max-width and shadow */}
+          <CardHeader className="space-y-2 text-center p-6"> {/* Increased padding */}
+            <div className="flex justify-center items-center mb-3">
+                <GrTechnology className="h-10 w-10 text-primary" /> {/* Changed icon and size */}
             </div>
-           <CardDescription>
-             Enter your details below to register for Mock Orbit.
+            <CardTitle className="text-2xl font-bold text-primary">Join Mock Orbit</CardTitle>
+           <CardDescription className="text-muted-foreground">
+             Create your account to start practicing and conducting mock interviews.
            </CardDescription>
          </CardHeader>
-         <CardContent>
+         <CardContent className="p-6"> {/* Increased padding */}
            <Form {...form}>
-             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6"> {/* Increased spacing */}
                <FormField
                  control={form.control}
                  name="name"
                  render={({ field }) => (
                    <FormItem>
-                     <FormLabel>Name</FormLabel>
+                     <FormLabel className="text-foreground">Full Name</FormLabel>
                      <FormControl>
-                       <Input placeholder="Your Name" {...field} disabled={isLoading} />
+                       <Input 
+                        placeholder="e.g., Jane Doe" 
+                        {...field} 
+                        disabled={isLoading}
+                        className="bg-background border-input focus:border-primary focus:ring-primary"
+                        />
                      </FormControl>
                      <FormMessage />
                    </FormItem>
@@ -123,9 +128,15 @@ export default function RegisterPage() {
                  name="email"
                  render={({ field }) => (
                    <FormItem>
-                     <FormLabel>Email</FormLabel>
+                     <FormLabel className="text-foreground">Email Address</FormLabel>
                      <FormControl>
-                       <Input placeholder="you@example.com" {...field} disabled={isLoading} />
+                       <Input 
+                        type="email"
+                        placeholder="you@example.com" 
+                        {...field} 
+                        disabled={isLoading}
+                        className="bg-background border-input focus:border-primary focus:ring-primary"
+                        />
                      </FormControl>
                      <FormMessage />
                    </FormItem>
@@ -136,9 +147,15 @@ export default function RegisterPage() {
                  name="password"
                  render={({ field }) => (
                    <FormItem>
-                     <FormLabel>Password</FormLabel>
+                     <FormLabel className="text-foreground">Create Password</FormLabel>
                      <FormControl>
-                       <Input type="password" placeholder="Create a password (min. 6 characters)" {...field} disabled={isLoading} />
+                       <Input 
+                        type="password" 
+                        placeholder="Minimum 6 characters" 
+                        {...field} 
+                        disabled={isLoading} 
+                        className="bg-background border-input focus:border-primary focus:ring-primary"
+                        />
                      </FormControl>
                      <FormMessage />
                    </FormItem>
@@ -149,28 +166,28 @@ export default function RegisterPage() {
                  name="role"
                  render={({ field }) => (
                    <FormItem className="space-y-3">
-                     <FormLabel>Your Primary Role:</FormLabel>
+                     <FormLabel className="text-foreground">I want to register as a...</FormLabel>
                      <FormControl>
                        <RadioGroup
                          onValueChange={field.onChange}
                          defaultValue={field.value}
-                         className="flex flex-col sm:flex-row sm:space-x-4"
+                         className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1" // Grid layout for roles
                          disabled={isLoading}
                        >
-                         <FormItem className="flex items-center space-x-2 space-y-0">
+                         <FormItem className="flex items-center space-x-3 p-3 border rounded-md hover:border-primary has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5 transition-all">
                            <FormControl>
                              <RadioGroupItem value="interviewee" id="role-interviewee" />
                            </FormControl>
-                           <FormLabel htmlFor="role-interviewee" className="font-normal">
-                             Interviewee (I want to practice)
+                           <FormLabel htmlFor="role-interviewee" className="font-normal cursor-pointer flex-1">
+                             Interviewee <span className="block text-xs text-muted-foreground">I want to practice for interviews.</span>
                            </FormLabel>
                          </FormItem>
-                         <FormItem className="flex items-center space-x-2 space-y-0">
+                         <FormItem className="flex items-center space-x-3 p-3 border rounded-md hover:border-primary has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5 transition-all">
                            <FormControl>
                              <RadioGroupItem value="interviewer" id="role-interviewer" />
                            </FormControl>
-                           <FormLabel htmlFor="role-interviewer" className="font-normal">
-                             Interviewer (I want to help others)
+                           <FormLabel htmlFor="role-interviewer" className="font-normal cursor-pointer flex-1">
+                             Interviewer <span className="block text-xs text-muted-foreground">I want to help others practice.</span>
                            </FormLabel>
                          </FormItem>
                        </RadioGroup>
@@ -179,16 +196,20 @@ export default function RegisterPage() {
                    </FormItem>
                  )}
                />
-               <Button type="submit" className="w-full bg-primary hover:bg-primary/90" disabled={isLoading}>
-                 {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Registering...</> : "Register"}
+               <Button 
+                type="submit" 
+                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground py-3 text-base font-semibold rounded-lg shadow-md hover:shadow-lg transition-all" // Enhanced button style
+                disabled={isLoading}
+                >
+                 {isLoading ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Creating Account...</> : <><UserPlus className="mr-2 h-5 w-5"/>Register</>}
                </Button>
              </form>
            </Form>
          </CardContent>
-         <CardFooter className="flex justify-center text-sm">
-            <p>Already have an account?&nbsp;</p>
-           <Link href="/auth/login" className={`text-accent hover:underline ${isLoading ? 'pointer-events-none opacity-50' : ''}`} prefetch={false}>
-             Login
+         <CardFooter className="flex justify-center text-sm p-6"> {/* Increased padding */}
+            <p className="text-muted-foreground">Already have an account?&nbsp;</p>
+           <Link href="/auth/login" className={`font-semibold text-accent hover:underline ${isLoading ? 'pointer-events-none opacity-50' : ''}`} prefetch={false}>
+             Log in
            </Link>
          </CardFooter>
        </Card>

@@ -1,258 +1,220 @@
 
-"use client"; // Must be a client component for hooks
+"use client";
 
 import { useState, useEffect } from "react";
 import AppLayout from "@/components/shared/AppLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, Clock, Users, Star, Loader2 } from "lucide-react"; // Added Loader2
+import { CalendarDays, Users, Star, MessageSquareWarning, Loader2, CheckCircle, ExternalLink, Info } from "lucide-react";
 import Link from "next/link";
-import { useAuth } from "@/providers/AuthProvider"; // Import useAuth
-import { useToast } from "@/hooks/use-toast"; // Import useToast
-import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
+import { useAuth } from "@/providers/AuthProvider";
+import { useToast } from "@/hooks/use-toast";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 
-// Define API URL (consider moving to environment variables)
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
 
-// Define interfaces for data matching backend
 interface Interview {
   id: string;
   interviewee?: { id: string; name: string; };
-  scheduled_time: string; // ISO string format recommended
+  scheduled_time: string;
   topic: string;
   status?: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
 }
 
 interface PerformanceStats {
   interviewsConducted: number;
-  averageRating: number | null; // Can be null if no ratings yet
+  averageRating: number | null;
   feedbackPending: number;
 }
 
 export default function InterviewerDashboardPage() {
-  const { user, token, isLoading: isAuthLoading, activeRole } = useAuth(); // Use activeRole
+  const { user, token, isLoading: isAuthLoading, activeRole } = useAuth();
   const { toast } = useToast();
   const [scheduledInterviews, setScheduledInterviews] = useState<Interview[]>([]);
   const [performanceStats, setPerformanceStats] = useState<PerformanceStats | null>(null);
   const [isLoadingInterviews, setIsLoadingInterviews] = useState(true);
   const [isLoadingStats, setIsLoadingStats] = useState(true);
 
-   // Redirect if role is incorrect (handled by AuthProvider now)
    useEffect(() => {
     if (!isAuthLoading && activeRole && activeRole !== 'interviewer') {
-         toast({ title: "Access Denied", description: "Redirecting to your dashboard...", variant: "destructive" });
-        // router.push(`/dashboard/${activeRole}`);
+        // router.push(`/dashboard/${activeRole}`); // AuthProvider handles this
     }
-   }, [isAuthLoading, activeRole, toast]);
+   }, [isAuthLoading, activeRole]);
 
-  // Fetch Scheduled Interviews
   useEffect(() => {
     const fetchScheduled = async () => {
-       if (!user?.id || !token || activeRole !== 'interviewer') { // Check role
+       if (!user?.id || !token || activeRole !== 'interviewer') {
            setIsLoadingInterviews(false);
            return;
        }
        setIsLoadingInterviews(true);
        try {
-         // Fetch interviews where the user is the interviewer and status is scheduled
-         const response = await fetch(`${API_URL}/users/${user.id}/interviews?role=interviewer&status=scheduled`, {
+         const response = await fetch(`${API_URL}/users/${user.id}/interviews?role=interviewer&status=scheduled,in_progress`, { // Also fetch in_progress
            headers: { Authorization: `Bearer ${token}` },
          });
-
          const data = await response.json();
-
-         if (!response.ok) {
-             throw new Error(data.error || 'Failed to fetch scheduled interviews');
-         }
-
-         setScheduledInterviews(data || []); // Ensure data is an array
+         if (!response.ok) throw new Error(data.error || 'Failed to fetch scheduled interviews');
+         setScheduledInterviews(data || []);
        } catch (error: any) {
          console.error("Failed to fetch scheduled interviews:", error);
          toast({ title: "Error", description: `Could not load scheduled interviews: ${error.message}`, variant: "destructive" });
-         setScheduledInterviews([]); // Clear on error
+         setScheduledInterviews([]);
        } finally {
          setIsLoadingInterviews(false);
        }
      };
-     if (!isAuthLoading) {
-         fetchScheduled();
-     }
-   }, [user?.id, token, toast, isAuthLoading, activeRole]); // Add activeRole dependency
+     if (!isAuthLoading) fetchScheduled();
+   }, [user?.id, token, toast, isAuthLoading, activeRole]);
 
-
-    // Fetch Performance Stats
     useEffect(() => {
         const fetchStats = async () => {
-            if (!user?.id || !token || activeRole !== 'interviewer') { // Check role
+            if (!user?.id || !token || activeRole !== 'interviewer') {
                 setIsLoadingStats(false);
                 return;
             }
             setIsLoadingStats(true);
             try {
-                // Fetch stats for the current user
                 const response = await fetch(`${API_URL}/users/${user.id}/stats`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
-
                 const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.error || 'Failed to fetch performance stats');
-                }
-
+                if (!response.ok) throw new Error(data.error || 'Failed to fetch performance stats');
                 setPerformanceStats(data);
             } catch (error: any) {
                 console.error("Failed to fetch performance stats:", error);
                 toast({ title: "Error", description: `Could not load performance stats: ${error.message}`, variant: "destructive" });
-                setPerformanceStats(null); // Clear on error
+                setPerformanceStats(null);
             } finally {
                 setIsLoadingStats(false);
             }
         };
-        if (!isAuthLoading) {
-            fetchStats();
-        }
-    }, [user?.id, token, toast, isAuthLoading, activeRole]); // Add activeRole dependency
-
+        if (!isAuthLoading) fetchStats();
+    }, [user?.id, token, toast, isAuthLoading, activeRole]);
 
    const formatDate = (isoString: string): string => {
        try {
-           return new Intl.DateTimeFormat(undefined, { // Use user's locale/timezone
-               dateStyle: 'medium',
-               timeStyle: 'short',
-           }).format(new Date(isoString));
-       } catch (e) {
-           return "Invalid Date";
-       }
+           return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(isoString));
+       } catch (e) { return "Invalid Date"; }
    };
 
-    const renderStatCardSkeleton = () => (
-        <Card>
+    const StatCard = ({ title, value, icon: Icon, description, isLoading }: { title: string, value: string | number, icon: React.ElementType, description?: string, isLoading?: boolean }) => (
+        <Card className="shadow-md hover:shadow-lg transition-shadow border-border">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-4 w-4 rounded-full" />
+                <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+                <Icon className="h-5 w-5 text-accent" />
             </CardHeader>
             <CardContent>
-                <Skeleton className="h-7 w-12 mb-1" />
-                <Skeleton className="h-3 w-32" />
+                {isLoading ? <Skeleton className="h-7 w-16 mb-1" /> : <div className="text-2xl font-bold text-primary">{value}</div>}
+                {description && <p className="text-xs text-muted-foreground">{description}</p>}
             </CardContent>
         </Card>
     );
 
-     const renderInterviewListSkeleton = () => (
+     const renderInterviewListSkeleton = (count: number) => (
         <div className="space-y-4">
-           {[...Array(2)].map((_, index) => (
-                <div key={index} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg">
-                    <div className="mb-2 sm:mb-0 space-y-2">
-                        <Skeleton className="h-4 w-36" />
-                        <Skeleton className="h-4 w-28" />
-                         <Skeleton className="h-4 w-40" />
+           {[...Array(count)].map((_, index) => (
+                <Card key={index} className="p-4 border rounded-lg shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+                        <div className="mb-3 sm:mb-0 space-y-2">
+                            <Skeleton className="h-5 w-40" />
+                            <Skeleton className="h-4 w-32" />
+                            <Skeleton className="h-4 w-44" />
+                        </div>
+                        <Skeleton className="h-10 w-24 rounded-md" />
                     </div>
-                    <Skeleton className="h-9 w-20" />
-                </div>
+                </Card>
            ))}
         </div>
      );
 
-
   return (
     <AppLayout>
-      <div className="space-y-6">
-        <h1 className="text-3xl font-bold text-primary">Interviewer Dashboard</h1>
-
-        {/* Stats Section */}
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-           {isLoadingStats ? ( // Check isLoadingStats directly
-               <>
-                 {renderStatCardSkeleton()}
-                 {renderStatCardSkeleton()}
-                 {renderStatCardSkeleton()}
-               </>
-           ) : performanceStats ? ( // Check if performanceStats is not null
-               <>
-                   <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Interviews Conducted</CardTitle>
-                      <Users className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{performanceStats.interviewsConducted}</div>
-                      <p className="text-xs text-muted-foreground">Total interviews completed</p>
-                    </CardContent>
-                  </Card>
-                   <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Average Rating</CardTitle>
-                      <Star className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">
-                          {performanceStats.averageRating !== null ? `${performanceStats.averageRating.toFixed(1)} / 5` : 'N/A'}
-                      </div>
-                      <p className="text-xs text-muted-foreground">Based on interviewee feedback</p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Feedback Pending</CardTitle>
-                      <Clock className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{performanceStats.feedbackPending}</div>
-                       {/* Link to feedback page/section - Update href if needed */}
-                       {/* Add Link component if needed */}
-                       <p className="text-xs text-muted-foreground hover:underline text-accent cursor-pointer">View interviews</p> {/* Placeholder link */}
-                    </CardContent>
-                  </Card>
-               </>
-           ) : (
-              // Render placeholder or error message if stats failed to load
-               <p className="text-muted-foreground col-span-full text-center">Could not load performance statistics.</p>
-           )}
+      <div className="space-y-8">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <h1 className="text-3xl font-bold text-primary">Interviewer Dashboard</h1>
+             {/* Maybe a link to availability settings or general schedule view if different from interviewee's */}
+            <Link href="/schedule" passHref>
+                <Button className="bg-accent text-accent-foreground hover:bg-accent/90 shadow-md hover:shadow-lg transition-shadow">
+                    <CalendarDays className="mr-2 h-5 w-5"/> Manage Availability
+                </Button>
+            </Link>
         </div>
 
-        {/* Upcoming Interviews Section */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Upcoming Scheduled Interviews</CardTitle>
-            <CardDescription>Interviews you are scheduled to conduct.</CardDescription>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+           <StatCard
+             title="Interviews Conducted"
+             value={performanceStats?.interviewsConducted ?? 0}
+             icon={CheckCircle}
+             description="Total interviews completed"
+             isLoading={isLoadingStats}
+           />
+           <StatCard
+             title="Average Rating"
+             value={performanceStats?.averageRating !== null && performanceStats?.averageRating !== undefined ? `${performanceStats.averageRating.toFixed(1)} / 5` : 'N/A'}
+             icon={Star}
+             description="Based on interviewee feedback"
+             isLoading={isLoadingStats}
+           />
+          <StatCard
+             title="Feedback Pending"
+             value={performanceStats?.feedbackPending ?? 0}
+             icon={MessageSquareWarning}
+             description="Interviews awaiting your feedback"
+             isLoading={isLoadingStats}
+           />
+        </div>
+
+        <Card className="shadow-lg border-border hover:shadow-xl transition-shadow">
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center text-xl"><Users className="mr-3 h-6 w-6 text-primary"/>Upcoming Sessions</CardTitle>
+            <CardDescription>Interviews you are scheduled to conduct. Be prepared!</CardDescription>
           </CardHeader>
           <CardContent>
-            {isLoadingInterviews ? (
-                renderInterviewListSkeleton()
-            ) : scheduledInterviews.length > 0 ? (
+            {isLoadingInterviews ? renderInterviewListSkeleton(2)
+             : scheduledInterviews.length > 0 ? (
               <ul className="space-y-4">
                 {scheduledInterviews.map((interview) => (
-                  <li key={interview.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-secondary transition-colors">
-                    <div className="mb-2 sm:mb-0">
-                      <p className="font-medium">{interview.interviewee?.name || 'N/A'}</p>
-                      <p className="text-sm text-muted-foreground">Topic: {interview.topic}</p>
-                      <div className="flex items-center text-sm text-muted-foreground mt-1">
-                         <Calendar className="w-4 h-4 mr-1.5" />
-                         <span>{formatDate(interview.scheduled_time)}</span>
-                      </div>
+                  <Card key={interview.id} className="p-4 border rounded-lg hover:bg-secondary/50 transition-colors shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+                        <div className="mb-3 sm:mb-0">
+                          <p className="font-semibold text-lg">{interview.topic}</p>
+                          <p className="text-sm text-muted-foreground">Interviewee: {interview.interviewee?.name || 'N/A'}</p>
+                          <div className="flex items-center text-sm text-muted-foreground mt-1">
+                             <CalendarDays className="w-4 h-4 mr-1.5" />
+                             <span>{formatDate(interview.scheduled_time)}</span>
+                          </div>
+                        </div>
+                        <Link href={`/interview-room/${interview.id}`} passHref>
+                            <Button size="sm" className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm hover:shadow-md transition-shadow w-full sm:w-auto" disabled={interview.status !== 'scheduled' && interview.status !== 'in_progress'}>
+                                {interview.status === 'in_progress' ? 'Rejoin Room' : 'Start Interview'}
+                                <ExternalLink className="ml-2 h-4 w-4"/>
+                            </Button>
+                        </Link>
                     </div>
-                    <Link href={`/interview-room/${interview.id}`} passHref>
-                        <Button size="sm" disabled={interview.status !== 'scheduled'}>
-                            {interview.status === 'scheduled' ? 'Join Room' : interview.status}
-                        </Button>
-                    </Link>
-                  </li>
+                     {interview.status === 'in_progress' && <Badge variant="default" className="mt-2 inline-block bg-green-500 text-white">In Progress</Badge>}
+                  </Card>
                 ))}
               </ul>
             ) : (
-              <p className="text-muted-foreground text-center py-4">No upcoming interviews scheduled.</p>
+              <Alert className="bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-700">
+                <Info className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <AlertTitle className="text-blue-700 dark:text-blue-300">No Upcoming Interviews</AlertTitle>
+                <AlertDescription className="text-blue-600 dark:text-blue-400">
+                  You have no interviews scheduled to conduct. Check your availability settings or wait for interviewees to schedule with you.
+                </AlertDescription>
+              </Alert>
             )}
-            {/* Keep the link to the full schedule */}
-            <div className="mt-6 flex justify-center">
-                <Link href="/schedule" passHref>
-                    <Button variant="outline">View/Update Availability</Button> {/* Changed Button text */}
-                </Link>
-            </div>
           </CardContent>
+            {/* Potentially add a footer link to history or settings */}
+            {/* <CardFooter>
+                <Link href="/profile#history" passHref className="w-full">
+                     <Button variant="outline" size="sm" className="w-full">View Full Interview History</Button>
+                </Link>
+            </CardFooter> */}
         </Card>
-
-         {/* Add more sections like recent feedback, performance charts, etc. */}
       </div>
     </AppLayout>
   );

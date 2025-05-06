@@ -9,7 +9,7 @@ import AppLayout from "@/components/shared/AppLayout";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+// import { Label } from "@/components/ui/label"; // FormLabel is preferred
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Form,
@@ -20,22 +20,19 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { BrainCircuit, List, Loader2, AlertTriangle } from 'lucide-react'; // Added AlertTriangle
+import { BrainCircuit, ListChecks, Loader2, AlertTriangle, Wand2, Info } from 'lucide-react'; // Changed icons
 import { Skeleton } from '@/components/ui/skeleton';
-// Removed import { generateInterviewQuestions, GenerateInterviewQuestionsOutput } from '@/ai/flows/generate-interview-questions';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
-// Define API URL
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
 
-// Output type expected from backend (adjust if needed)
 interface GeneratedQuestion {
     questionText: string;
 }
 type GenerateInterviewQuestionsOutput = GeneratedQuestion[];
 
-
 const questionGeneratorSchema = z.object({
-  topic: z.string().min(3, { message: "Topic must be at least 3 characters." }),
+  topic: z.string().min(3, { message: "Topic must be at least 3 characters." }).max(100, {message: "Topic too long."}),
   difficulty: z.enum(["Easy", "Medium", "Hard"], { required_error: "Please select a difficulty level." }),
 });
 
@@ -45,74 +42,63 @@ export default function QuestionGeneratorPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [generatedQuestions, setGeneratedQuestions] = useState<GenerateInterviewQuestionsOutput>([]);
   const { toast } = useToast();
-  const [isBackendImplemented, setIsBackendImplemented] = useState(false); // Track if backend is ready
+  const [isBackendImplemented, setIsBackendImplemented] = useState(false); // Set true to test backend call
 
   const form = useForm<QuestionGeneratorFormValues>({
     resolver: zodResolver(questionGeneratorSchema),
-    defaultValues: {
-      topic: "",
-      difficulty: undefined,
-    },
+    defaultValues: { topic: "", difficulty: undefined },
   });
 
   async function onSubmit(values: QuestionGeneratorFormValues) {
     if (!isBackendImplemented) {
          toast({
-            title: "Feature Not Available",
-            description: "The backend endpoint for AI question generation is not yet implemented.",
-            variant: "destructive",
+            title: "Feature In Development",
+            description: "The AI question generation backend is currently under construction. Using mock data for now.",
+            variant: "default", // Use default or a warning variant
          });
-         return;
+        // Proceed with mock data for UI demonstration
+        setIsLoading(true);
+        setGeneratedQuestions([]);
+        await new Promise(res => setTimeout(res, 1200)); // Simulate delay
+        const mockQuestions: GenerateInterviewQuestionsOutput = [
+            { questionText: `Explain the core concepts of ${values.topic}. (Difficulty: ${values.difficulty})`},
+            { questionText: `Describe a challenging scenario involving ${values.topic} and how you would approach it.`},
+            { questionText: `Compare and contrast [Technique A] and [Technique B] within ${values.topic}.`},
+            { questionText: `What are some common pitfalls when working with ${values.topic}?`},
+            { questionText: `How would you optimize performance for an application using ${values.topic}?`},
+        ];
+        setGeneratedQuestions(mockQuestions);
+        setIsLoading(false);
+        return;
      }
 
+    // Actual backend call logic (when isBackendImplemented is true)
     setIsLoading(true);
-    setGeneratedQuestions([]); // Clear previous questions
+    setGeneratedQuestions([]);
     try {
-      // TODO: Replace with actual API call to the backend endpoint when implemented
-      // Example structure:
-      // const response = await fetch(`${API_URL}/generate-questions`, { // Assuming endpoint like /generate-questions
+      // TODO: Replace with actual API call
+      // const response = await fetch(`${API_URL}/ai/generate-questions`, { // Example endpoint
       //   method: 'POST',
-      //   headers: {
-      //     'Content-Type': 'application/json',
-      //     // 'Authorization': `Bearer ${token}` // If protected
-      //   },
+      //   headers: { 'Content-Type': 'application/json', /* 'Authorization': `Bearer ${token}` */ },
       //   body: JSON.stringify(values),
       // });
       // const questions = await response.json();
-      // if (!response.ok) {
-      //   throw new Error(questions.error || "Failed to generate questions");
-      // }
-
-      // --- MOCK RESPONSE ---
-      await new Promise(res => setTimeout(res, 1500)); // Simulate delay
-      const questions: GenerateInterviewQuestionsOutput = [
-         { questionText: `Explain ${values.topic} (Difficulty: ${values.difficulty}) - Mock Question 1`},
-         { questionText: `How would you approach [Scenario related to ${values.topic}]? - Mock Question 2`},
-         { questionText: `What are the pros and cons of [Technique related to ${values.topic}]? - Mock Question 3`},
-      ];
-       // --- END MOCK RESPONSE ---
+      // if (!response.ok) throw new Error(questions.error || "Failed to generate questions from backend");
+      
+      // MOCK for now, replace above
+      await new Promise(res => setTimeout(res, 1500));
+      const questions: GenerateInterviewQuestionsOutput = [ { questionText: `Backend Question for ${values.topic}` } ];
+      // END MOCK
 
       if (!questions || questions.length === 0) {
-          toast({
-            title: "No Questions Generated",
-            description: "The AI couldn't generate questions for this topic/difficulty. Try adjusting your input.",
-            variant: "destructive",
-          });
+          toast({ title: "No Questions Generated", description: "The AI couldn't find questions for this. Try a different topic or difficulty.", variant: "destructive" });
       } else {
          setGeneratedQuestions(questions);
-         toast({
-            title: "Questions Generated (Mock)",
-            description: `Successfully generated ${questions.length} questions.`,
-         });
+         toast({ title: "Questions Generated!", description: `Successfully generated ${questions.length} questions.`, variant: "default" });
       }
-
     } catch (error: any) {
       console.error("Error generating questions:", error);
-      toast({
-        title: "Generation Failed",
-        description: error.message || "An unexpected error occurred while generating questions.",
-        variant: "destructive",
-      });
+      toast({ title: "Generation Failed", description: error.message, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
@@ -121,27 +107,24 @@ export default function QuestionGeneratorPage() {
   return (
     <AppLayout>
       <div className="space-y-8">
-        <h1 className="text-3xl font-bold text-primary flex items-center"><BrainCircuit className="mr-3 w-8 h-8"/> AI Question Generator</h1>
+        <h1 className="text-3xl font-bold text-primary flex items-center">
+            <BrainCircuit className="mr-3 w-9 h-9 text-accent"/> AI Question Generator
+        </h1>
 
         {!isBackendImplemented && (
-             <Card className="border-yellow-400 bg-yellow-50 dark:bg-yellow-900/30">
-                 <CardHeader className="flex-row items-center gap-3 space-y-0">
-                     <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
-                     <CardTitle className="text-yellow-700 dark:text-yellow-300 text-lg">Backend Not Implemented</CardTitle>
-                 </CardHeader>
-                 <CardContent>
-                     <p className="text-sm text-yellow-600 dark:text-yellow-400">
-                         The backend functionality for generating AI questions needs to be implemented.
-                         The "Generate Questions" button currently uses mock data for demonstration.
-                     </p>
-                 </CardContent>
-             </Card>
+             <Alert variant="default" className="bg-yellow-50 border-yellow-300 dark:bg-yellow-900/20 dark:border-yellow-700">
+                 <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+                 <AlertTitle className="font-semibold text-yellow-700 dark:text-yellow-300">Developer Note</AlertTitle>
+                 <AlertDescription className="text-sm text-yellow-600 dark:text-yellow-500">
+                     The backend for AI question generation is not yet implemented. This page currently uses mock data for UI demonstration purposes.
+                 </AlertDescription>
+             </Alert>
         )}
 
-        <Card>
+        <Card className="shadow-lg border-border hover:shadow-xl transition-shadow">
             <CardHeader>
-                <CardTitle>Generate Interview Questions</CardTitle>
-                <CardDescription>Enter a topic and difficulty level to get AI-generated practice questions.</CardDescription>
+                <CardTitle className="text-xl">Generate Custom Interview Questions</CardTitle>
+                <CardDescription className="text-muted-foreground">Enter a topic and select a difficulty level to get AI-generated practice questions tailored to your needs.</CardDescription>
             </CardHeader>
            <CardContent>
              <Form {...form}>
@@ -151,9 +134,13 @@ export default function QuestionGeneratorPage() {
                    name="topic"
                    render={({ field }) => (
                      <FormItem>
-                       <FormLabel>Interview Topic</FormLabel>
+                       <FormLabel className="text-foreground font-medium">Interview Topic</FormLabel>
                        <FormControl>
-                         <Input placeholder="e.g., React State Management, REST API Design, Go Channels" {...field} />
+                         <Input 
+                            placeholder="e.g., System Design, React Hooks, Python Data Structures" 
+                            {...field} 
+                            className="bg-background border-input focus:border-primary focus:ring-primary"
+                          />
                        </FormControl>
                        <FormMessage />
                      </FormItem>
@@ -164,10 +151,10 @@ export default function QuestionGeneratorPage() {
                    name="difficulty"
                    render={({ field }) => (
                      <FormItem>
-                        <FormLabel>Difficulty Level</FormLabel>
+                        <FormLabel className="text-foreground font-medium">Difficulty Level</FormLabel>
                          <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
-                                <SelectTrigger>
+                                <SelectTrigger className="bg-background border-input focus:border-primary focus:ring-primary">
                                     <SelectValue placeholder="Select difficulty..." />
                                 </SelectTrigger>
                             </FormControl>
@@ -181,46 +168,67 @@ export default function QuestionGeneratorPage() {
                      </FormItem>
                    )}
                  />
-
-                 <Button type="submit" className="bg-primary hover:bg-primary/90 w-full sm:w-auto" disabled={isLoading}>
-                   {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</> : "Generate Questions"}
+                 <Button 
+                    type="submit" 
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground py-2.5 px-6 rounded-lg shadow-md hover:shadow-lg transition-all w-full sm:w-auto" 
+                    disabled={isLoading}
+                  >
+                   {isLoading ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Generating Questions...</> : <><Wand2 className="mr-2 h-5 w-5"/>Generate Questions</>}
                  </Button>
                </form>
              </Form>
            </CardContent>
         </Card>
 
-        {/* Display Generated Questions */}
         {(isLoading || generatedQuestions.length > 0) && (
-            <Card>
+            <Card className="shadow-lg border-border hover:shadow-xl transition-shadow">
                 <CardHeader>
-                    <CardTitle className="flex items-center"><List className="mr-2 h-5 w-5"/> Generated Questions</CardTitle>
+                    <CardTitle className="flex items-center text-xl"><ListChecks className="mr-3 h-6 w-6 text-accent"/> Generated Questions</CardTitle>
+                    <CardDescription className="text-muted-foreground">Here are the questions generated by the AI based on your input.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     {isLoading ? (
-                        <div className="space-y-4">
-                            <div className="flex items-center space-x-2"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground"/><span className="text-muted-foreground">Generating questions...</span></div>
-                            {/* Skeletons for questions */}
+                        <div className="space-y-3">
                             {[...Array(3)].map((_, i) => (
-                                 <div key={i} className="space-y-2 pl-7 pt-2">
-                                     <Skeleton className="h-4 w-3/4" />
-                                     <Skeleton className="h-4 w-1/2" />
+                                 <div key={i} className="flex items-start space-x-3 p-2">
+                                     <Skeleton className="h-5 w-5 rounded-full mt-0.5" />
+                                     <div className="space-y-1.5 flex-1">
+                                        <Skeleton className="h-4 w-4/5" />
+                                        <Skeleton className="h-4 w-3/5" />
+                                     </div>
                                  </div>
                             ))}
+                             <p className="text-sm text-muted-foreground text-center pt-2">AI is thinking... please wait.</p>
                         </div>
                     ) : (
                         generatedQuestions.length > 0 ? (
-                            <ul className="space-y-3 list-decimal list-inside">
+                            <ul className="space-y-4">
                                 {generatedQuestions.map((q, index) => (
-                                    <li key={index} className="text-sm">{q.questionText}</li>
+                                    <li key={index} className="p-3 border rounded-md bg-secondary/30 hover:bg-secondary/60 transition-colors">
+                                        <p className="text-md text-foreground">{q.questionText}</p>
+                                    </li>
                                 ))}
                             </ul>
-                        ) : null /* Should not happen if isLoading is false and length is 0 here */
+                        ) : (
+                            <Alert variant="default" className="bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-700">
+                                <Info className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                <AlertTitle className="text-blue-700 dark:text-blue-300">No Questions Yet</AlertTitle>
+                                <AlertDescription className="text-blue-600 dark:text-blue-400">
+                                  The AI finished, but no questions were generated for your specific criteria. Try adjusting the topic or difficulty.
+                                </AlertDescription>
+                            </Alert>
+                        )
                     )}
                 </CardContent>
+                 {generatedQuestions.length > 0 && !isLoading && (
+                    <CardFooter className="pt-4">
+                        <p className="text-xs text-muted-foreground">
+                            These questions are AI-generated. Use them as a starting point for your practice.
+                        </p>
+                    </CardFooter>
+                 )}
             </Card>
         )}
-
       </div>
     </AppLayout>
   );

@@ -25,6 +25,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Home, Calendar, User, Settings, LogOut, Rocket, Menu, Users, MessageSquare, LayoutDashboard, Mic, Video, ClipboardEdit, BrainCircuit, Repeat } from 'lucide-react'; // Added Repeat icon
 import { useAuth } from '@/providers/AuthProvider';
 import { Skeleton } from '@/components/ui/skeleton';
+import { GrTechnology } from "react-icons/gr";
 
 
 interface NavItem {
@@ -108,11 +109,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Sidebar side="left" variant="sidebar" collapsible="icon">
         <SidebarHeader className="p-4 flex items-center justify-between">
              <Link href="/" className="flex items-center gap-2 group-data-[collapsible=icon]:hidden" prefetch={false}>
-                <Rocket className="h-6 w-6 text-primary" />
+                <GrTechnology className="h-6 w-6 text-primary" />
                 <span className="font-semibold text-primary">Mock Orbit</span>
              </Link>
              <Link href="/" className="hidden group-data-[collapsible=icon]:flex items-center" prefetch={false}>
-                 <Rocket className="h-6 w-6 text-primary" />
+                 <GrTechnology className="h-6 w-6 text-primary" />
                  <span className="sr-only">Mock Orbit</span>
              </Link>
              {/* Mobile Trigger - Only shown on mobile if sidebar component hides it */}
@@ -154,7 +155,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     <SidebarMenuItem key="switch-role">
                         <SidebarMenuButton
                             onClick={switchRole}
-                            variant="ghost" // Use ghost variant for less emphasis
+                            variant="outline" // Use outline variant for less emphasis
                             tooltip={{ children: `Switch to ${activeRole === 'interviewee' ? 'Interviewer' : 'Interviewee'}`, side: 'right' }}
                         >
                             <Repeat />

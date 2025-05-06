@@ -9,7 +9,6 @@ import AppLayout from "@/components/shared/AppLayout";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Form,
@@ -24,34 +23,31 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/providers/AuthProvider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { History, Loader2 } from 'lucide-react';
+import { History, Loader2, UserCircle, Edit3 } from 'lucide-react';
 import Link from 'next/link';
+import { Badge } from "@/components/ui/badge"; // Added Badge component
 
-// Define API URL (consider moving to environment variables)
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
 
-
 const profileSchema = z.object({
-  name: z.string().min(2, { message: "Name must be at least 2 characters." }),
-  email: z.string().email({ message: "Invalid email address." }).readonly(), // Make email read-only in the form
-  profile_picture_url: z.string().url({ message: "Invalid URL format. Please enter a valid URL or leave empty." }).optional().or(z.literal('')), // Allow empty string or valid URL
+  name: z.string().min(2, { message: "Name must be at least 2 characters." }).max(50, { message: "Name cannot exceed 50 characters." }),
+  email: z.string().email().readonly(),
+  profile_picture_url: z.string().url({ message: "Invalid URL. Please enter a valid image URL or leave empty." }).optional().or(z.literal('')),
 });
 
-// Type for form values (excluding email for submission)
 type ProfileFormValues = Omit<z.infer<typeof profileSchema>, 'email'>;
 
-// Interface for interview history item matching backend response
 interface InterviewHistoryItem {
   id: string;
-  scheduled_time: string; // ISO Date string
+  scheduled_time: string;
   interviewer: { id: string; name: string };
   interviewee: { id: string; name: string };
   topic: string;
-  status: 'Completed' | 'Cancelled' | 'Scheduled'; // Adjust statuses as needed
+  status: 'Completed' | 'Cancelled' | 'Scheduled' | 'in_progress'; // Added 'in_progress'
   feedback_status: 'Received' | 'Provided' | 'Pending' | 'N/A';
-  // Add feedback_id or feedback_link if available
+  role_played?: 'Interviewer' | 'Interviewee'; // Added for clarity in table
+  counterpart_name?: string; // Added for clarity
 }
-
 
 export default function ProfilePage() {
   const { user, token, isLoading: isAuthLoading, login, activeRole } = useAuth();
@@ -60,194 +56,132 @@ export default function ProfilePage() {
   const [history, setHistory] = useState<InterviewHistoryItem[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
 
-
-  const form = useForm<z.infer<typeof profileSchema>>({ // Use the full schema type for the form
+  const form = useForm<z.infer<typeof profileSchema>>({
     resolver: zodResolver(profileSchema),
-    defaultValues: {
-      name: "",
-      email: "", // Will be set from user context, not editable
-      profile_picture_url: "",
-    },
+    defaultValues: { name: "", email: "", profile_picture_url: "" },
   });
 
- // Populate form with user data when available
  useEffect(() => {
     if (user) {
       form.reset({
         name: user.name || "",
-        email: user.email || "", // Set email here, it's read-only in the form field
+        email: user.email || "",
         profile_picture_url: user.profile_picture_url || "",
       });
     }
   }, [user, form]);
 
-
-  // Fetch interview history
   useEffect(() => {
     const fetchHistory = async () => {
-       if (!user?.id || !token) { // Check user and token
+       if (!user?.id || !token) {
            setIsHistoryLoading(false);
            return;
        }
       setIsHistoryLoading(true);
       try {
-        // Fetch all completed/cancelled interviews involving the user
-        const response = await fetch(`${API_URL}/users/${user.id}/interviews?status=completed,cancelled`, { // Fetch all roles' past interviews
+        // Fetch all completed/cancelled interviews (could expand to include 'in_progress' if desired)
+        const response = await fetch(`${API_URL}/users/${user.id}/interviews?status=completed,cancelled,in_progress`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-
         const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to fetch interview history');
 
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to fetch history');
-        }
-
-        // Add role_played field based on user context
-        const historyWithRole = data.map((item: InterviewHistoryItem) => ({
+        const historyWithDetails = (data || []).map((item: InterviewHistoryItem) => ({
              ...item,
              role_played: item.interviewer.id === user.id ? 'Interviewer' : 'Interviewee',
              counterpart_name: item.interviewer.id === user.id ? item.interviewee.name : item.interviewer.name,
-         })).sort((a: InterviewHistoryItem, b: InterviewHistoryItem) => new Date(b.scheduled_time).getTime() - new Date(a.scheduled_time).getTime()); // Sort by date descending
+         })).sort((a: InterviewHistoryItem, b: InterviewHistoryItem) => new Date(b.scheduled_time).getTime() - new Date(a.scheduled_time).getTime());
 
-
-        setHistory(historyWithRole || []); // Ensure data is an array
-
+        setHistory(historyWithDetails);
       } catch (error: any) {
         console.error("Failed to fetch interview history:", error);
         toast({ title: "Error", description: `Could not load interview history: ${error.message}`, variant: "destructive" });
-        setHistory([]); // Clear history on error
+        setHistory([]);
       } finally {
         setIsHistoryLoading(false);
       }
     };
-
-    if (!isAuthLoading) { // Only fetch when auth state is resolved
-        fetchHistory();
-    }
-  }, [user?.id, token, toast, isAuthLoading]); // Removed activeRole dependency as we fetch all
-
+    if (!isAuthLoading) fetchHistory();
+  }, [user?.id, token, toast, isAuthLoading]);
 
    async function onSubmit(values: z.infer<typeof profileSchema>) {
      if (!user || !token) {
-         toast({ title: "Error", description: "You must be logged in to update your profile.", variant: "destructive" });
+         toast({ title: "Authentication Error", description: "Please log in to update your profile.", variant: "destructive" });
          return;
      }
      setIsSubmitting(true);
-
-     // Prepare data for submission (exclude email)
-     const submissionData: ProfileFormValues = {
-         name: values.name,
-         // Send null if URL is empty, otherwise send the URL
-         profile_picture_url: values.profile_picture_url ? values.profile_picture_url : undefined, // Send undefined/omit if empty to potentially clear it
-     };
-
-      // Explicitly check if profile_picture_url is an empty string to send null
-     if (values.profile_picture_url === '') {
-         submissionData.profile_picture_url = ''; // Send empty string to backend if it expects that to clear
-         // Or, if backend expects null to clear:
-         // delete submissionData.profile_picture_url; // or set to null if PATCH allows it
-     }
-
+     const submissionData: ProfileFormValues = { name: values.name, profile_picture_url: values.profile_picture_url || undefined };
+     if (values.profile_picture_url === '') submissionData.profile_picture_url = '';
 
      try {
-       // Use PATCH for partial updates
-       const response = await fetch(`${API_URL}/users/profile`, { // Use the new /profile endpoint
+       const response = await fetch(`${API_URL}/users/profile`, {
          method: 'PATCH',
-         headers: {
-             'Content-Type': 'application/json',
-             'Authorization': `Bearer ${token}`
-          },
+         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
          body: JSON.stringify(submissionData),
        });
-
-       const updatedUser = await response.json();
-
-       if (!response.ok) {
-         throw new Error(updatedUser.error || `Profile update failed: ${response.status}`);
-       }
-
-
-       // Update user data in AuthContext using the login function which handles updates
-       if (token && updatedUser) {
-           login(token, updatedUser); // Re-use login to update context state
-       } else {
-           throw new Error("Failed to update local user state after profile update.");
-       }
-
-
-       toast({
-         title: "Profile Updated",
-         description: "Your profile information has been saved.",
-       });
-
+       const updatedUserData = await response.json();
+       if (!response.ok) throw new Error(updatedUserData.error || `Profile update failed: ${response.status}`);
+       if (token && updatedUserData) login(token, updatedUserData);
+       else throw new Error("Failed to update local user state after profile update.");
+       toast({ title: "Profile Updated!", description: "Your information has been successfully saved.", variant: "default" });
      } catch (error: any) {
-       toast({
-         title: "Update Failed",
-         description: error.message || "An unexpected error occurred.",
-         variant: "destructive",
-       });
+       toast({ title: "Update Failed", description: error.message || "An unexpected error occurred.", variant: "destructive" });
      } finally {
        setIsSubmitting(false);
      }
    }
 
-   const getInitials = (name?: string | null) => {
-     if (!name) return "??";
-     return name.split(' ').map(n => n[0]).join('').toUpperCase();
-   };
-
+   const getInitials = (name?: string | null) => (name ? name.split(' ').map(n => n[0]).join('').toUpperCase() : "??");
    const formatHistoryDate = (isoString: string): string => {
        try {
-           return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(new Date(isoString)); // Use locale
-       } catch (e) {
-           return "Invalid Date";
-       }
+           return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(isoString));
+       } catch (e) { return "Invalid Date"; }
+   };
+
+   const getFeedbackBadgeVariant = (status?: string): "default" | "secondary" | "destructive" | "outline" => {
+    switch (status) {
+        case 'Received': return 'default';
+        case 'Provided': return 'default'; // Can use same as received or a different one like 'success' if you add it
+        case 'Pending': return 'secondary';
+        case 'N/A':
+        case 'Cancelled': return 'outline';
+        default: return 'outline';
+    }
    };
 
     const renderHistoryLoadingSkeletons = (count: number) => (
         <Table>
             <TableHeader>
                 <TableRow>
-                    <TableHead><Skeleton className="h-4 w-24" /></TableHead>
-                    <TableHead><Skeleton className="h-4 w-16" /></TableHead>
-                    <TableHead><Skeleton className="h-4 w-24" /></TableHead>
-                    <TableHead><Skeleton className="h-4 w-32" /></TableHead>
-                    <TableHead><Skeleton className="h-4 w-16" /></TableHead>
-                    <TableHead><Skeleton className="h-4 w-20" /></TableHead>
+                    {[...Array(6)].map((_, i) => <TableHead key={i}><Skeleton className="h-4 w-full" /></TableHead>)}
                 </TableRow>
             </TableHeader>
             <TableBody>
                 {[...Array(count)].map((_, index) => (
                     <TableRow key={index}>
-                        <TableCell><Skeleton className="h-4 w-full" /></TableCell>
-                        <TableCell><Skeleton className="h-4 w-full" /></TableCell>
-                        <TableCell><Skeleton className="h-4 w-full" /></TableCell>
-                        <TableCell><Skeleton className="h-4 w-full" /></TableCell>
-                        <TableCell><Skeleton className="h-4 w-full" /></TableCell>
-                        <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
+                        {[...Array(6)].map((_, i) => <TableCell key={i}><Skeleton className="h-4 w-full" /></TableCell>)}
                     </TableRow>
                 ))}
             </TableBody>
         </Table>
     );
 
-
   if (isAuthLoading) {
       return (
           <AppLayout>
-              <div className="space-y-6">
-                <Skeleton className="h-8 w-48" />
-                <Card>
-                    <CardHeader><Skeleton className="h-6 w-32" /></CardHeader>
-                    <CardContent className="space-y-4">
-                        <Skeleton className="h-10 w-full" />
+              <div className="space-y-8 p-2 md:p-0">
+                <Skeleton className="h-10 w-1/3" />
+                <Card className="shadow-sm">
+                    <CardHeader><Skeleton className="h-7 w-1/4" /></CardHeader>
+                    <CardContent className="space-y-6">
+                        <div className="flex items-center space-x-4"><Skeleton className="h-20 w-20 rounded-full" /><Skeleton className="h-10 flex-1" /></div>
                         <Skeleton className="h-10 w-full" />
                         <Skeleton className="h-10 w-full" />
                     </CardContent>
-                     <CardFooter><Skeleton className="h-10 w-24" /></CardFooter>
+                     <CardFooter><Skeleton className="h-10 w-28 rounded-md" /></CardFooter>
                 </Card>
-                 <Card>
-                    <CardHeader><Skeleton className="h-6 w-40" /></CardHeader>
+                 <Card className="shadow-sm">
+                    <CardHeader><Skeleton className="h-7 w-1/3" /></CardHeader>
                     <CardContent>{renderHistoryLoadingSkeletons(3)}</CardContent>
                  </Card>
               </div>
@@ -256,12 +190,12 @@ export default function ProfilePage() {
   }
 
   if (!user) {
-       // Handled by AuthProvider redirect, but good fallback.
        return (
             <AppLayout>
-                <div className="flex flex-col items-center justify-center gap-4 pt-10">
-                    <p>Please log in to view your profile.</p>
-                    <Link href="/auth/login"><Button>Login</Button></Link>
+                <div className="flex flex-col items-center justify-center gap-4 pt-12 text-center">
+                    <UserCircle className="w-16 h-16 text-muted-foreground" />
+                    <p className="text-lg font-medium">Please log in to view your profile.</p>
+                    <Link href="/auth/login"><Button className="bg-primary text-primary-foreground hover:bg-primary/90">Login</Button></Link>
                 </div>
             </AppLayout>
        )
@@ -270,33 +204,31 @@ export default function ProfilePage() {
   return (
     <AppLayout>
       <div className="space-y-8">
-        <h1 className="text-3xl font-bold text-primary">Your Profile</h1>
+        <h1 className="text-3xl font-bold text-primary flex items-center"><UserCircle className="mr-3 w-8 h-8"/>Your Profile</h1>
 
-        <Card>
+        <Card className="shadow-lg border-border hover:shadow-xl transition-shadow">
             <CardHeader>
-                <CardTitle>Account Information</CardTitle>
-                <CardDescription>Update your personal details. Email cannot be changed.</CardDescription>
+                <CardTitle className="flex items-center text-xl"><Edit3 className="mr-2 h-5 w-5"/>Account Information</CardTitle>
+                <CardDescription>Manage your personal details. Email address cannot be changed.</CardDescription>
             </CardHeader>
            <CardContent>
              <Form {...form}>
                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                 <div className="flex items-center space-x-4 mb-6">
-                    <Avatar className="h-20 w-20">
-                        {/* Use form state for preview, fallback to user data */}
-                        <AvatarImage src={form.watch('profile_picture_url') || user.profile_picture_url || undefined} alt={user.name || ''} />
-                        <AvatarFallback className="text-2xl">{getInitials(user.name)}</AvatarFallback>
+                 <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6 mb-6">
+                    <Avatar className="h-24 w-24 ring-0 ring-primary ring-offset-0 ring-offset-background"> {/*Ring offset and ring were 2 */}
+                        <AvatarImage src={form.watch('profile_picture_url') || user.profile_picture_url || undefined} alt={user.name || 'User Avatar'} />
+                        <AvatarFallback className="text-3xl bg-muted text-muted-foreground">{getInitials(user.name)}</AvatarFallback>
                     </Avatar>
                     <FormField
                         control={form.control}
                         name="profile_picture_url"
                         render={({ field }) => (
-                        <FormItem className="flex-1">
-                            <FormLabel>Profile Picture URL</FormLabel>
+                        <FormItem className="flex-1 w-full sm:w-auto">
+                            <FormLabel className="text-foreground">Profile Picture URL</FormLabel>
                             <FormControl>
-                            {/* Ensure value is controlled and defaults to empty string if null/undefined */}
-                            <Input placeholder="https://example.com/image.png" {...field} value={field.value || ""} />
+                            <Input placeholder="https://example.com/your-avatar.png" {...field} value={field.value || ""} className="bg-background border-input focus:border-primary focus:ring-primary"/>
                             </FormControl>
-                             <FormDescription>Enter a valid image URL or leave empty.</FormDescription>
+                             <FormDescription className="text-xs">Enter a valid image URL (e.g., PNG, JPG) or leave empty for initials.</FormDescription>
                             <FormMessage />
                         </FormItem>
                         )}
@@ -308,48 +240,44 @@ export default function ProfilePage() {
                    name="name"
                    render={({ field }) => (
                      <FormItem>
-                       <FormLabel>Name</FormLabel>
+                       <FormLabel className="text-foreground">Full Name</FormLabel>
                        <FormControl>
-                         <Input {...field} value={field.value ?? ""} />
+                         <Input {...field} value={field.value ?? ""} className="bg-background border-input focus:border-primary focus:ring-primary"/>
                        </FormControl>
                        <FormMessage />
                      </FormItem>
                    )}
                  />
-                 {/* Email - Display Only */}
                  <FormField
                     control={form.control}
-                    name="email" // Still need to include in form for validation/display purposes
+                    name="email"
                     render={({ field }) => (
                         <FormItem>
-                           <FormLabel>Email</FormLabel>
+                           <FormLabel className="text-foreground">Email Address</FormLabel>
                            <FormControl>
-                               {/* Display value from user context, field value is just for form state */}
-                               <Input type="email" value={user.email || ""} readOnly disabled className="bg-muted/50 cursor-not-allowed"/>
+                               <Input type="email" value={user.email || ""} readOnly disabled className="bg-muted/60 border-input cursor-not-allowed"/>
                            </FormControl>
-                           <FormDescription>Email address cannot be changed.</FormDescription>
-                            <FormMessage /> {/* Show validation errors if any (though it's readonly) */}
+                           <FormDescription className="text-xs">Email address is linked to your account and cannot be changed.</FormDescription>
+                            <FormMessage />
                         </FormItem>
                     )}
                  />
-
-
-                 <Button type="submit" className="bg-primary hover:bg-primary/90" disabled={isSubmitting}>
-                   {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</> : "Save Changes"}
+                 <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground py-2.5 px-6 rounded-lg shadow-md hover:shadow-lg transition-all" disabled={isSubmitting}>
+                   {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving Changes...</> : "Save Changes"}
                  </Button>
                </form>
              </Form>
            </CardContent>
         </Card>
 
-        <Card id="history">
+        <Card id="history" className="shadow-lg border-border hover:shadow-xl transition-shadow">
             <CardHeader>
-                <CardTitle className="flex items-center"><History className="mr-2 h-5 w-5"/> Interview History</CardTitle>
-                <CardDescription>A record of your past interviews.</CardDescription>
+                <CardTitle className="flex items-center text-xl"><History className="mr-2 h-5 w-5"/> Interview History</CardTitle>
+                <CardDescription>A record of your past and ongoing interviews.</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="overflow-x-auto">
                 {isHistoryLoading ? (
-                     renderHistoryLoadingSkeletons(5) // Show more skeletons while loading
+                     renderHistoryLoadingSkeletons(5)
                 ) : history.length > 0 ? (
                     <Table>
                         <TableHeader>
@@ -360,42 +288,36 @@ export default function ProfilePage() {
                                 <TableHead>Topic</TableHead>
                                 <TableHead>Status</TableHead>
                                 <TableHead>Feedback</TableHead>
-                                {/* Add Action column if needed */}
-                                {/* <TableHead>Action</TableHead> */}
                             </TableRow>
                         </TableHeader>
                          <TableBody>
                             {history.map((item) => (
-                                <TableRow key={item.id}>
-                                    <TableCell className="whitespace-nowrap">{formatHistoryDate(item.scheduled_time)}</TableCell>
-                                    {/* Display role played in this specific interview */}
-                                    <TableCell>{item.interviewer.id === user.id ? 'Interviewer' : 'Interviewee'}</TableCell>
-                                    {/* Display counterpart name */}
-                                    <TableCell>{item.interviewer.id === user.id ? item.interviewee.name : item.interviewer.name}</TableCell>
-                                    <TableCell>{item.topic}</TableCell>
-                                    <TableCell>{item.status}</TableCell>
+                                <TableRow key={item.id} className="hover:bg-secondary/50 transition-colors">
+                                    <TableCell className="whitespace-nowrap font-medium">{formatHistoryDate(item.scheduled_time)}</TableCell>
+                                    <TableCell><Badge variant={item.role_played === 'Interviewer' ? 'default' : 'secondary'}>{item.role_played}</Badge></TableCell>
+                                    <TableCell>{item.counterpart_name}</TableCell>
+                                    <TableCell className="max-w-[200px] truncate" title={item.topic}>{item.topic}</TableCell>
                                     <TableCell>
-                                       <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${
-                                            item.status === 'Cancelled' ? 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300' :
-                                            item.feedback_status === 'Received' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                                            item.feedback_status === 'Provided' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-                                            item.feedback_status === 'Pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                                            'bg-secondary text-secondary-foreground' // For N/A or other statuses
-                                        }`}>
-                                            {item.status === 'Cancelled' ? 'N/A' : item.feedback_status || 'Pending'} {/* Show N/A if cancelled */}
-                                        </span>
+                                        <Badge variant={
+                                            item.status === 'Completed' ? 'default' :
+                                            item.status === 'Cancelled' ? 'destructive' :
+                                            item.status === 'in_progress' ? 'outline' : // Consider a specific color for in_progress
+                                            'secondary'
+                                        }>
+                                        {item.status}
+                                        </Badge>
                                     </TableCell>
-                                    {/* Optional Action Cell */}
-                                    {/* <TableCell>
-                                        {item.feedback_status === 'Received' && <Button variant="link" size="sm" asChild><Link href={`/feedback/${item.id}`}>View</Link></Button>}
-                                        {item.feedback_status === 'Pending' && item.role_played === 'Interviewer' && <Button variant="link" size="sm" asChild><Link href={`/feedback/provide/${item.id}`}>Provide</Link></Button>}
-                                    </TableCell> */}
+                                    <TableCell>
+                                       <Badge variant={getFeedbackBadgeVariant(item.status === 'Cancelled' || item.status === 'in_progress' ? 'N/A' : item.feedback_status)}>
+                                            {item.status === 'Cancelled' || item.status === 'in_progress' ? 'N/A' : item.feedback_status || 'Pending'}
+                                        </Badge>
+                                    </TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>
                     </Table>
                 ) : (
-                    <p className="text-muted-foreground text-center py-4">No interview history found.</p>
+                    <p className="text-muted-foreground text-center py-6">No interview history found. Start by scheduling an interview!</p>
                 )}
             </CardContent>
         </Card>
