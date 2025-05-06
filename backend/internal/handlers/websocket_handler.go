@@ -26,14 +26,20 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		// Allow frontend origin (adjust as needed for production)
 		allowedOrigin := config.AppConfig.FrontendURL // Use configured Frontend URL
-		if allowedOrigin == "" {
-			// Fallback for local development if not set in .env
-			allowedOrigin = "http://localhost:9002"
-			log.Println("Warning: FRONTEND_URL not set, defaulting CORS to", allowedOrigin)
-		}
-		origin := r.Header.Get("Origin")
-		// Allow if origin matches or if origin is not specified (e.g. same-origin requests or tools like Postman)
-		return origin == allowedOrigin || origin == ""
+        allowedOrigins := []string{"http://localhost:9002", "https://mockorbit.vercel.app", "http://another-allowed-origin.com"} // Add multiple allowed origins
+        if allowedOrigin == "" {
+            // Fallback for local development if not set in .env
+            allowedOrigin = "http://localhost:9002"
+            log.Println("Warning: FRONTEND_URL not set, defaulting CORS to", allowedOrigin)
+        }
+        origin := r.Header.Get("Origin")
+        // Allow if origin matches any of the allowed origins or if origin is not specified
+        for _, ao := range allowedOrigins {
+            if origin == ao || origin == "" {
+                return true
+            }
+        }
+        return false
 	},
 }
 
