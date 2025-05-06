@@ -1,374 +1,39 @@
 package handlers
 
-// import (
-// 	"log"
-// 	"net/http"
-// 	"sync"
-
-// 	"mock-orbit/backend/internal/models"
-
-// 	"github.com/gin-gonic/gin"
-// 	"github.com/gorilla/websocket"
-// )
-
-// var upgrader = websocket.Upgrader{
-// 	ReadBufferSize:  1024,
-// 	WriteBufferSize: 1024,
-// 	CheckOrigin: func(r *http.Request) bool {
-// 		// Allow all connections for development
-// 		// TODO: Restrict origins in production
-// 		return true
-// 	},
-// }
-
-// // Represents a connected client
-// type Client struct {
-// 	Conn        *websocket.Conn
-// 	InterviewID string
-// 	UserID      string
-// }
-
-// // Hub manages WebSocket connections for interview rooms
-// type Hub struct {
-// 	Rooms map[string]map[*websocket.Conn]*Client // interviewID -> {conn -> client}
-// 	Mutex sync.RWMutex
-// }
-
-// var hub = Hub{
-// 	Rooms: make(map[string]map[*websocket.Conn]*Client),
-// }
-
-// // AddClient adds a client to a room
-// func (h *Hub) AddClient(client *Client) {
-// 	h.Mutex.Lock()
-// 	defer h.Mutex.Unlock()
-
-// 	if _, ok := h.Rooms[client.InterviewID]; !ok {
-// 		h.Rooms[client.InterviewID] = make(map[*websocket.Conn]*Client)
-// 	}
-// 	h.Rooms[client.InterviewID][client.Conn] = client
-// 	log.Printf("Client %s joined room %s. Room size: %d", client.UserID, client.InterviewID, len(h.Rooms[client.InterviewID]))
-
-//     // Notify others in the room about the new user (for WebRTC signaling)
-//     h.notifyOthersOfJoin(client)
-// }
-
-// // RemoveClient removes a client from a room and cleans up the room if empty
-// func (h *Hub) RemoveClient(client *Client) {
-// 	h.Mutex.Lock()
-// 	defer h.Mutex.Unlock()
-
-// 	if room, ok := h.Rooms[client.InterviewID]; ok {
-// 		if _, clientOk := room[client.Conn]; clientOk {
-//             // Notify others before removing
-//             h.broadcastMessage(client.InterviewID, client.Conn, map[string]interface{}{
-//                 "type": "user-disconnected",
-//                 "userId": client.UserID,
-//             })
-
-// 			delete(room, client.Conn)
-// 			log.Printf("Client %s removed from room %s. Room size: %d", client.UserID, client.InterviewID, len(room))
-
-// 			// Clean up room if it becomes empty
-// 			if len(room) == 0 {
-// 				delete(h.Rooms, client.InterviewID)
-// 				log.Printf("Room %s removed as it's empty.", client.InterviewID)
-// 			}
-// 		}
-// 	}
-// }
-
-// // BroadcastMessage sends a message to all clients in a room except the sender
-// func (h *Hub) broadcastMessage(interviewID string, sender *websocket.Conn, message interface{}) {
-// 	h.Mutex.RLock() // Use RLock for reading
-// 	defer h.Mutex.RUnlock()
-
-// 	if room, ok := h.Rooms[interviewID]; ok {
-// 		for conn, client := range room {
-// 			if conn != sender { // Don't send back to sender
-// 				err := conn.WriteJSON(message)
-// 				if err != nil {
-// 					log.Printf("Error broadcasting message to client %s in room %s: %v", client.UserID, interviewID, err)
-// 					// Consider removing the client if write fails repeatedly
-// 					// h.RemoveClient(client) // Be careful with locking if calling RemoveClient here
-// 				}
-// 			}
-// 		}
-// 	}
-// }
-
-// // SendMessageTo sends a message directly to a specific client connection
-// func (h *Hub) sendMessageTo(conn *websocket.Conn, message interface{}) error {
-//     // No need for lock here as WriteJSON is likely thread-safe for a single connection,
-//     // but adding RLock is safer if other operations modify the connection state.
-//     h.Mutex.RLock()
-//     _, clientExists := h.getClientByConn(conn) // Check if client still exists in hub
-//     h.Mutex.RUnlock()
-
-//     if !clientExists {
-//         log.Printf("Attempted to send message to a non-existent or removed connection.")
-//         // Returning an error might not be the best approach here, depends on caller handling
-//         return websocket.ErrCloseSent // Or a custom error
-//     }
-
-//     // Use WriteJSON which handles mutex internally for writes on the connection
-// 	err := conn.WriteJSON(message)
-// 	if err != nil {
-// 		log.Printf("Error sending direct message: %v", err)
-//         // Consider removing client if write fails
-// 	}
-//     return err
-// }
-
-// // GetClientByConn safely retrieves a client by connection pointer
-// func (h *Hub) getClientByConn(conn *websocket.Conn) (*Client, bool) {
-//     // Assumes caller holds at least RLock
-//     for _, room := range h.Rooms {
-//         if client, ok := room[conn]; ok {
-//             return client, true
-//         }
-//     }
-//     return nil, false
-// }
-
-// // notifyOthersOfJoin sends necessary info to existing clients when a new one joins (for WebRTC)
-// func (h *Hub) notifyOthersOfJoin(newClient *Client) {
-//     // Assumes caller holds Lock
-//     room := h.Rooms[newClient.InterviewID]
-//     existingClients := make([]map[string]string, 0, len(room)-1) // List of existing users
-
-//     for conn, client := range room {
-//         if client.UserID != newClient.UserID {
-//             existingClients = append(existingClients, map[string]string{"id": client.UserID})
-
-//             // Tell existing client about the new user (they might initiate signal)
-//             // We don't send signal data here, just notification
-//             err := conn.WriteJSON(map[string]interface{}{
-//                 "type": "user-joined-notification", // Different from 'user-joined' signal message
-//                 "userId": newClient.UserID,
-//             })
-//              if err != nil {
-//                 log.Printf("Error notifying client %s about new user %s: %v", client.UserID, newClient.UserID, err)
-//             }
-//         }
-//     }
-
-//     // Tell the new client about all existing users
-//     if len(existingClients) > 0 {
-//         err := newClient.Conn.WriteJSON(map[string]interface{}{
-//             "type": "all-users", // Trigger for the new client to potentially initiate connection
-//             "users": existingClients,
-//         })
-//         if err != nil {
-//              log.Printf("Error sending 'all-users' to new client %s: %v", newClient.UserID, err)
-//         }
-//     }
-// }
-
-// // FindPeerConn finds the connection of the other participant in the room.
-// func (h *Hub) findPeerConn(interviewID string, selfID string) (*websocket.Conn, *Client) {
-//     h.Mutex.RLock()
-//     defer h.Mutex.RUnlock()
-//     if room, ok := h.Rooms[interviewID]; ok {
-//         for conn, client := range room {
-//             if client.UserID != selfID {
-//                 return conn, client
-//             }
-//         }
-//     }
-//     return nil, nil
-// }
-
-// // WebsocketHandler handles WebSocket upgrade requests and manages communication.
-// func WebsocketHandler(c *gin.Context) {
-// 	// TODO: Add Authentication/Authorization here before upgrading
-// 	// Extract user ID and interview ID from query params or token
-// 	interviewID := c.Query("interviewId")
-// 	userID := c.Query("userId") // Get user ID from authenticated context or query param
-//     token := c.Query("token") // Get token for validation
-
-// 	if interviewID == "" || userID == "" || token == "" {
-// 		log.Println("WebSocket upgrade refused: Missing interviewId, userId, or token")
-// 		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing required query parameters (interviewId, userId, token)"})
-// 		return
-// 	}
-
-//     // Basic Token Validation (optional but recommended)
-//     // You could re-use parts of your AuthMiddleware logic here, but avoid full DB lookup if possible
-//     _, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
-//         if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-//             return nil, jwt.NewValidationError("unexpected signing method", jwt.ValidationErrorSignatureInvalid)
-//         }
-//         return []byte(config.AppConfig.JWTSecret), nil
-//     })
-//     if err != nil {
-//         log.Printf("WebSocket upgrade refused for user %s in room %s: Invalid token: %v", userID, interviewID, err)
-//         c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
-//         return
-//     }
-
-// 	// Upgrade HTTP connection to WebSocket
-// 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-// 	if err != nil {
-// 		log.Printf("WebSocket upgrade error for room %s: %v", interviewID, err)
-// 		// Gin likely handles the response, but logging is important
-// 		return
-// 	}
-// 	defer conn.Close() // Ensure connection is closed when handler exits
-
-// 	client := &Client{
-// 		Conn:        conn,
-// 		InterviewID: interviewID,
-// 		UserID:      userID,
-// 	}
-// 	hub.AddClient(client)
-// 	defer hub.RemoveClient(client) // Ensure client is removed when connection closes
-
-// 	// Read messages from the client
-// 	for {
-// 		var message map[string]interface{} // Use map for flexible message structure
-// 		err := conn.ReadJSON(&message)
-// 		if err != nil {
-// 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-// 				log.Printf("WebSocket read error for client %s in room %s: %v", client.UserID, client.InterviewID, err)
-// 			} else {
-// 				log.Printf("WebSocket connection closed for client %s in room %s.", client.UserID, client.InterviewID)
-// 			}
-// 			break // Exit loop on error or close
-// 		}
-
-// 		log.Printf("Received message from %s in room %s: Type=%s", client.UserID, client.InterviewID, message["type"])
-
-//         // Handle different message types
-//         msgType, typeOk := message["type"].(string)
-//         if !typeOk {
-//             log.Printf("Invalid message format from %s: 'type' field missing or not a string", client.UserID)
-//             continue
-//         }
-
-// 		switch msgType {
-// 		case "chat-message":
-//              var chatMsg models.ChatMessage
-//              // Crude remarshaling - ideally use a typed struct from the start
-//              jsonData, _ := json.Marshal(message["message"])
-//              json.Unmarshal(jsonData, &chatMsg)
-//              chatMsg.InterviewID = interviewID // Ensure interview ID is set
-//              chatMsg.SenderID = userID // Ensure sender ID is correct
-//              // TODO: Optionally store chat message in DB
-//              hub.broadcastMessage(interviewID, conn, map[string]interface{}{"type": "chat-message", "message": chatMsg})
-
-// 		case "code-update":
-//             var codeUpdate models.CodeUpdate
-//             jsonData, _ := json.Marshal(message)
-//             json.Unmarshal(jsonData, &codeUpdate)
-//             codeUpdate.InterviewID = interviewID
-//             codeUpdate.SenderID = userID
-// 			hub.broadcastMessage(interviewID, conn, map[string]interface{}{"type": "code-update", "code": codeUpdate.Code})
-
-// 		case "whiteboard-update":
-//             var wbUpdate models.WhiteboardUpdate
-//              jsonData, _ := json.Marshal(message)
-//              json.Unmarshal(jsonData, &wbUpdate)
-//             wbUpdate.InterviewID = interviewID
-//             wbUpdate.SenderID = userID
-// 			hub.broadcastMessage(interviewID, conn, map[string]interface{}{"type": "whiteboard-update", "data": wbUpdate.Data})
-
-//         // --- WebRTC Signaling ---
-//         case "sending-signal": // Initiator sends signal to peer
-//             userToSignal, utsOk := message["userToSignal"].(string)
-//             signalData, sdOk := message["signal"]
-//             if !utsOk || !sdOk {
-//                  log.Printf("Invalid 'sending-signal' message from %s", client.UserID)
-//                  continue
-//             }
-//              // Find the connection of the user to signal
-//             peerConn, peerClient := hub.findPeerConn(interviewID, client.UserID) // Find conn of userToSignal
-//             if peerConn != nil && peerClient.UserID == userToSignal {
-//                 log.Printf("Relaying 'sending-signal' from %s to %s", client.UserID, userToSignal)
-//                 err := hub.sendMessageTo(peerConn, map[string]interface{}{
-//                     "type": "user-joined", // Peer receives this type
-//                     "signal": signalData,
-//                     "callerId": client.UserID,
-//                 })
-//                 if err != nil {
-//                      log.Printf("Error relaying 'sending-signal' to %s: %v", userToSignal, err)
-//                  }
-//             } else {
-//                  log.Printf("User %s tried to signal non-existent or incorrect user %s", client.UserID, userToSignal)
-//             }
-
-//         case "returning-signal": // Peer returns signal to initiator
-//              callerId, ciOk := message["callerId"].(string)
-//              signalData, sdOk := message["signal"]
-//               if !ciOk || !sdOk {
-//                  log.Printf("Invalid 'returning-signal' message from %s", client.UserID)
-//                  continue
-//              }
-//             // Find the connection of the original caller
-//             callerConn, callerClient := hub.findPeerConn(interviewID, client.UserID) // Find conn of callerId
-//              if callerConn != nil && callerClient.UserID == callerId {
-//                  log.Printf("Relaying 'returning-signal' from %s to %s", client.UserID, callerId)
-//                 err := hub.sendMessageTo(callerConn, map[string]interface{}{
-//                     "type": "receiving-returned-signal", // Caller receives this type
-//                     "signal": signalData,
-//                     "id": client.UserID, // ID of the user who sent the return signal
-//                 })
-//                  if err != nil {
-//                      log.Printf("Error relaying 'returning-signal' to %s: %v", callerId, err)
-//                  }
-//             } else {
-//                  log.Printf("User %s tried to return signal to non-existent or incorrect caller %s", client.UserID, callerId)
-//             }
-
-//          case "end-interview":
-//             log.Printf("User %s initiated 'end-interview' for room %s", client.UserID, interviewID)
-//             // TODO: Update interview status in DB to 'completed' or 'cancelled'
-//              hub.broadcastMessage(interviewID, conn, map[string]interface{}{"type": "interview-ended"})
-//              // Optionally force close connections after broadcasting
-//              hub.Mutex.RLock()
-//              if room, ok := hub.Rooms[interviewID]; ok {
-//                  for conn := range room {
-//                      conn.Close() // Force close other connections in the room
-//                  }
-//              }
-//              hub.Mutex.RUnlock()
-//              // The defer hub.RemoveClient(client) will handle cleanup for the sender
-
-// 		default:
-// 			log.Printf("Unknown message type received from %s: %s", client.UserID, msgType)
-// 		}
-// 	}
-// }
-// ```
-// Added `json` import.
-// ```
-// <content><![CDATA[package handlers
-
 import (
-	// "encoding/json" // Added json import
+	"context"        // Import context package
+	"encoding/json"
 	"log"
 	"net/http"
-	"strings"
+	// "strings" // No longer needed here
 	"sync"
-	"time"
+	"time" // Import time package
 
 	"mock-orbit/backend/internal/config"
+	"mock-orbit/backend/internal/database" // Import database package
 	"mock-orbit/backend/internal/models"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"go.mongodb.org/mongo-driver/bson"         // Import bson package
+	"go.mongodb.org/mongo-driver/bson/primitive" // Import primitive package
 )
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		// Allow all connections for development
-		// TODO: Restrict origins in production (e.g., check r.Header.Get("Origin"))
-		// allowedOrigin := os.Getenv("FRONTEND_URL") // Example: Get from env var
-		// return r.Header.Get("Origin") == allowedOrigin
-		return true
+		// Allow frontend origin (adjust as needed for production)
+		allowedOrigin := config.AppConfig.FrontendURL // Use configured Frontend URL
+		if allowedOrigin == "" {
+			// Fallback for local development if not set in .env
+			allowedOrigin = "http://localhost:9002"
+			log.Println("Warning: FRONTEND_URL not set, defaulting CORS to", allowedOrigin)
+		}
+		origin := r.Header.Get("Origin")
+		// Allow if origin matches or if origin is not specified (e.g. same-origin requests or tools like Postman)
+		return origin == allowedOrigin || origin == ""
 	},
 }
 
@@ -389,31 +54,44 @@ var hub = Hub{
 	Rooms: make(map[string]map[*websocket.Conn]*Client),
 }
 
-// AddClient adds a client to a room
+// AddClient adds a client to a room, handling potential re-joins.
 func (h *Hub) AddClient(client *Client) {
 	h.Mutex.Lock()
 	defer h.Mutex.Unlock()
+
+	isRejoin := false
+	// Check if this user ID was previously in the room (quick check without iterating through closed conns)
+	// A more robust check might involve storing recently disconnected users temporarily
+	if room, ok := h.Rooms[client.InterviewID]; ok {
+		 for _, existingClient := range room {
+             if existingClient.UserID == client.UserID {
+                 log.Printf("User %s attempted to join room %s again. Closing new connection.", client.UserID, client.InterviewID)
+                 err := client.Conn.WriteJSON(map[string]interface{}{"type": "error", "message": "Already connected in another session."})
+                 if err != nil {
+                      log.Printf("Error sending 'already connected' message: %v", err)
+                 }
+                 client.Conn.Close()
+                 return // Don't add
+             }
+         }
+         // If user ID wasn't found but room exists, potentially a rejoin
+         // Simple heuristic: if room exists and user wasn't actively connected, consider it a rejoin
+         if len(room) > 0 { // If others are present, it's likely a rejoin for the joining user
+            isRejoin = true
+         }
+	}
+
 
 	if _, ok := h.Rooms[client.InterviewID]; !ok {
 		h.Rooms[client.InterviewID] = make(map[*websocket.Conn]*Client)
 		log.Printf("Created new room: %s", client.InterviewID)
 	}
 
-    // Prevent adding the same user twice (e.g., multiple tabs) - could be more robust
-    // for _, existingClient := range h.Rooms[client.InterviewID] {
-    //     if existingClient.UserID == client.UserID {
-    //         log.Printf("User %s attempted to join room %s again. Closing new connection.", client.UserID, client.InterviewID)
-    //          client.Conn.Close() // Close the new connection attempt
-    //         return // Don't add the client
-    //     }
-    // }
-
-
 	h.Rooms[client.InterviewID][client.Conn] = client
-	log.Printf("Client %s joined room %s. Room size: %d", client.UserID, client.InterviewID, len(h.Rooms[client.InterviewID]))
+	log.Printf("Client %s %s room %s. Room size: %d", client.UserID, map[bool]string{true: "REJOINED", false: "joined"}[isRejoin], client.InterviewID, len(h.Rooms[client.InterviewID]))
 
-    // Notify others in the room about the new user (for WebRTC signaling)
-    h.notifyOthersOfJoin(client)
+    // Notify others about the join/rejoin
+    h.notifyPeersOfPresenceLocked(client, isRejoin)
 }
 
 
@@ -423,8 +101,8 @@ func (h *Hub) RemoveClient(client *Client) {
 	defer h.Mutex.Unlock()
 
 	if room, ok := h.Rooms[client.InterviewID]; ok {
-		if _, clientOk := room[client.Conn]; clientOk {
-            userID := client.UserID // Capture userID before potential deletion
+		if c, clientOk := room[client.Conn]; clientOk {
+            userID := c.UserID // Capture userID before deletion
 
             // Notify others before removing
             h.broadcastMessageLocked(client.InterviewID, client.Conn, map[string]interface{}{
@@ -445,16 +123,16 @@ func (h *Hub) RemoveClient(client *Client) {
 }
 
 // broadcastMessageLocked sends a message to all clients in a room except the sender.
-// Assumes the Hub Mutex is already held by the caller.
+// Assumes the Hub Mutex is already held by the caller (Lock or RLock).
 func (h *Hub) broadcastMessageLocked(interviewID string, sender *websocket.Conn, message interface{}) {
 	if room, ok := h.Rooms[interviewID]; ok {
 		for conn, client := range room {
-			if conn != sender { // Don't send back to sender
+			if conn != sender {
 				err := conn.WriteJSON(message)
 				if err != nil {
 					log.Printf("Error broadcasting message to client %s in room %s: %v", client.UserID, interviewID, err)
-					// Consider scheduling removal instead of direct call to avoid deadlock
-                    // scheduleClientRemoval(client)
+					// Consider scheduling removal or handling error more gracefully
+					// Schedule client removal on write error?
 				}
 			}
 		}
@@ -472,89 +150,96 @@ func (h *Hub) BroadcastMessage(interviewID string, sender *websocket.Conn, messa
 // SendMessageTo sends a message directly to a specific client connection
 func (h *Hub) SendMessageTo(conn *websocket.Conn, message interface{}) error {
     h.Mutex.RLock()
-     // Check if the connection still exists in any room
-     clientFound := false
      var targetClient *Client
+     found := false
      for _, room := range h.Rooms {
          if client, ok := room[conn]; ok {
-             clientFound = true
              targetClient = client
+             found = true
              break
          }
      }
     h.Mutex.RUnlock()
 
-    if !clientFound {
+    if !found {
         log.Printf("Attempted to send message to a connection no longer in the hub.")
-        return websocket.ErrCloseSent // Indicate the connection is likely gone
+        return websocket.ErrCloseSent
     }
 
-    // Use WriteJSON which handles mutex internally for writes on the connection
 	err := conn.WriteJSON(message)
 	if err != nil {
 		log.Printf("Error sending direct message to client %s: %v", targetClient.UserID, err)
-        // Consider removing client if write fails (needs locking)
-        // go h.RemoveClient(targetClient) // Run removal in separate goroutine?
 	}
     return err
 }
 
 
-// notifyOthersOfJoin sends necessary info to existing clients when a new one joins (for WebRTC)
+// notifyPeersOfPresenceLocked informs other clients about a user's presence (join/rejoin)
+// and sends the current list of users to the joining/rejoining client.
 // Assumes the Hub Mutex is already held by the caller (Lock).
-func (h *Hub) notifyOthersOfJoin(newClient *Client) {
-    room := h.Rooms[newClient.InterviewID]
+func (h *Hub) notifyPeersOfPresenceLocked(joiningClient *Client, isRejoin bool) {
+    room := h.Rooms[joiningClient.InterviewID]
     existingClientInfos := make([]map[string]string, 0, len(room)-1) // List of existing users {id: "..."}
+    notificationType := "user-joined-notification"
+    if isRejoin {
+        notificationType = "peer-rejoined" // Use distinct type for rejoin
+    }
 
+    // Notify existing peers about the new/rejoining user
     for conn, existingClient := range room {
-        if existingClient.Conn != newClient.Conn { // If it's an existing client
+        if existingClient.Conn != joiningClient.Conn { // If it's an existing client
             existingClientInfos = append(existingClientInfos, map[string]string{"id": existingClient.UserID})
 
-            // Tell existing client about the new user (they might initiate signal)
+            // Tell existing client about the new/rejoining user
             err := conn.WriteJSON(map[string]interface{}{
-                "type": "user-joined-notification", // Use a distinct type
-                "userId": newClient.UserID,
+                "type": notificationType, // 'user-joined-notification' or 'peer-rejoined'
+                "userId": joiningClient.UserID,
             })
              if err != nil {
-                log.Printf("Error notifying client %s about new user %s: %v", existingClient.UserID, newClient.UserID, err)
+                log.Printf("Error notifying client %s about %s user %s: %v", existingClient.UserID, notificationType, joiningClient.UserID, err)
             }
         }
     }
 
-    // Tell the new client about all existing users immediately after joining
+    // Tell the new/rejoining client about all *other* existing users
     if len(existingClientInfos) > 0 {
-         log.Printf("Sending 'all-users' list to new client %s in room %s. Users: %v", newClient.UserID, newClient.InterviewID, existingClientInfos)
-        err := newClient.Conn.WriteJSON(map[string]interface{}{
+         log.Printf("Sending 'all-users' list to client %s in room %s. Users: %v", joiningClient.UserID, joiningClient.InterviewID, existingClientInfos)
+        err := joiningClient.Conn.WriteJSON(map[string]interface{}{
             "type": "all-users", // Client uses this to know who is already there
             "users": existingClientInfos,
         })
         if err != nil {
-             log.Printf("Error sending 'all-users' to new client %s: %v", newClient.UserID, err)
+             log.Printf("Error sending 'all-users' to client %s: %v", joiningClient.UserID, err)
         }
     } else {
-         log.Printf("New client %s is the first in room %s.", newClient.UserID, newClient.InterviewID)
+         log.Printf("Client %s is the first in room %s.", joiningClient.UserID, joiningClient.InterviewID)
     }
 }
 
-// FindPeerConn finds the connection and client object of the other participant in the room.
+
+// FindPeerConnLocked finds the connection and client object of the other participant(s) in the room.
+// For 1:1 calls, it returns the single peer.
 // Assumes the Hub Mutex is already held (RLock or Lock).
 func (h *Hub) findPeerConnLocked(interviewID string, selfID string) (*websocket.Conn, *Client) {
     if room, ok := h.Rooms[interviewID]; ok {
         for conn, client := range room {
             if client.UserID != selfID {
-                return conn, client // Found the peer
+                return conn, client // Found the peer (in 1:1 scenario)
             }
         }
     }
-    return nil, nil // Peer not found or room doesn't exist
+    return nil, nil // Peer not found or room doesn't exist/empty
 }
 
 
 // WebsocketHandler handles WebSocket upgrade requests and manages communication.
 func WebsocketHandler(c *gin.Context) {
+	interviewCollection := database.GetCollection("interviews") // Get collection inside handler
 	interviewID := c.Query("interviewId")
-	userID := c.Query("userId") // Should ideally come from validated JWT in a real scenario
-    token := c.Query("token") // Temporary way to pass token
+	userID := c.Query("userId") // Get user ID from query param (will be validated against token)
+    token := c.Query("token") // Get token for validation
+
+	log.Printf("WebSocket connection attempt: interviewId=%s, userId=%s, token provided=%t", interviewID, userID, token != "")
 
 	if interviewID == "" || userID == "" || token == "" {
 		log.Println("WebSocket upgrade refused: Missing interviewId, userId, or token")
@@ -562,222 +247,254 @@ func WebsocketHandler(c *gin.Context) {
 		return
 	}
 
-    // --- Basic Token Validation ---
+    // --- JWT Token Validation ---
+	log.Println("Validating JWT token...")
     claims := jwt.MapClaims{}
-    _, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
+    parsedToken, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
         if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			log.Printf("Unexpected signing method: %v", token.Header["alg"])
             return nil, jwt.NewValidationError("unexpected signing method", jwt.ValidationErrorSignatureInvalid)
         }
         return []byte(config.AppConfig.JWTSecret), nil
     })
 
-    if err != nil {
+    if err != nil || !parsedToken.Valid {
         log.Printf("WebSocket upgrade refused for user %s in room %s: Invalid token: %v", userID, interviewID, err)
         c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
         return
     }
+	log.Println("JWT token validated successfully.")
 
-     // --- Validate User ID against Token ---
-     tokenUserID, ok := claims["user_id"].(string)
-     if !ok || tokenUserID != userID {
-         log.Printf("WebSocket upgrade refused: User ID '%s' does not match token user ID '%s'", userID, tokenUserID)
+     // --- Validate User ID and Interview Participation ---
+     tokenUserID, okUserID := claims["user_id"].(string)
+     if !okUserID || tokenUserID != userID {
+         log.Printf("WebSocket upgrade refused: User ID '%s' from query does not match token user ID '%s'", userID, tokenUserID)
          c.JSON(http.StatusForbidden, gin.H{"error": "User ID mismatch"})
          return
      }
+	 log.Printf("User ID '%s' matches token.", userID)
 
-    // TODO: Validate that this user (tokenUserID) is actually part of the interview (interviewID) by checking the database.
-    // interviewOID, _ := primitive.ObjectIDFromHex(interviewID)
-    // userOID, _ := primitive.ObjectIDFromHex(tokenUserID)
-    // count, err := interviewCollection.CountDocuments(context.Background(), bson.M{"_id": interviewOID, "$or": []bson.M{{"interviewer_id": userOID}, {"interviewee_id": userOID}}})
-    // if err != nil || count == 0 {
-    //     log.Printf("WebSocket upgrade refused: User %s not part of interview %s", tokenUserID, interviewID)
-    //     c.JSON(http.StatusForbidden, gin.H{"error": "Not authorized for this interview"})
-    //     return
-    // }
+    // Validate interview ID format
+	log.Printf("Validating interview ID format: %s", interviewID)
+    interviewOID, err := primitive.ObjectIDFromHex(interviewID)
+    if err != nil {
+        log.Printf("WebSocket upgrade refused: Invalid interview ID format '%s'", interviewID)
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid interview ID format"})
+        return
+    }
+	log.Printf("Interview ID format validated: %s", interviewOID.Hex())
+    userOID, _ := primitive.ObjectIDFromHex(tokenUserID)
 
+    // Check if user is part of the specified interview
+	log.Printf("Checking participation for user %s in interview %s", userOID.Hex(), interviewOID.Hex())
+    count, err := interviewCollection.CountDocuments(context.Background(), bson.M{
+        "_id": interviewOID,
+        "$or": []bson.M{
+            {"interviewer_id": userOID},
+            {"interviewee_id": userOID},
+        },
+        "status": bson.M{"$in": []string{"scheduled", "in_progress"}}, // Allow joining scheduled or in-progress
+    })
+    if err != nil {
+        log.Printf("Error checking interview participation for user %s in interview %s: %v", tokenUserID, interviewID, err)
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify interview participation"})
+        return
+    }
+    if count == 0 {
+        // Fetch interview to check if it's completed/cancelled to give specific error
+        var interview models.Interview
+        findErr := interviewCollection.FindOne(context.Background(), bson.M{"_id": interviewOID}).Decode(&interview)
+        errMsg := "Not authorized for this interview or interview is not active"
+        if findErr == nil && (interview.Status == "completed" || interview.Status == "cancelled") {
+            errMsg = "This interview has already ended or been cancelled."
+        }
+        log.Printf("WebSocket upgrade refused: User %s in interview %s. Reason: %s", tokenUserID, interviewID, errMsg)
+        c.JSON(http.StatusForbidden, gin.H{"error": errMsg})
+        return
+    }
+	log.Printf("User %s authorized for interview %s.", userID, interviewID)
 
 	// Upgrade HTTP connection to WebSocket
+	log.Printf("Attempting to upgrade connection to WebSocket for user %s...", userID)
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Printf("WebSocket upgrade error for room %s: %v", interviewID, err)
-		// Gin likely handles the response, but logging is important
+		log.Printf("CRITICAL: WebSocket upgrade error for room %s, user %s: %v", interviewID, userID, err)
 		return
 	}
+	log.Printf("WebSocket connection upgraded successfully for user %s.", userID)
 	defer conn.Close() // Ensure connection is closed when handler exits
 
 	client := &Client{
 		Conn:        conn,
 		InterviewID: interviewID,
-		UserID:      userID, // Use the validated userID from token/query
+		UserID:      userID,
 	}
-	hub.AddClient(client)
-	// Defer removal until the function (and read loop) exits
+	hub.AddClient(client) // AddClient now handles rejoin logic notifications
     defer func() {
-        log.Printf("Removing client %s from room %s due to connection close or error", client.UserID, client.InterviewID)
+        log.Printf("Removing client %s from room %s due to connection close or error in read loop exit", client.UserID, client.InterviewID)
         hub.RemoveClient(client)
     }()
 
-	// Read messages from the client
+	// Main loop to read messages from the client
+	log.Printf("Starting message read loop for client %s...", client.UserID)
 	for {
-		var message map[string]interface{} // Use map for flexible message structure
+		var message map[string]interface{}
 		err := conn.ReadJSON(&message)
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("WebSocket read error for client %s in room %s: %v", client.UserID, client.InterviewID, err)
-			} else if err == websocket.ErrCloseSent || strings.Contains(err.Error(), "forcibly closed by the remote host") || strings.Contains(err.Error(), "connection reset by peer") {
-                 log.Printf("WebSocket connection closed normally for client %s in room %s.", client.UserID, client.InterviewID)
-             } else {
-				 log.Printf("WebSocket unknown read error for client %s in room %s: %v", client.UserID, client.InterviewID, err)
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
+				log.Printf("WebSocket unexpected read error for client %s in room %s: %v", client.UserID, client.InterviewID, err)
+			} else if e, ok := err.(*websocket.CloseError); ok && (e.Code == websocket.CloseNormalClosure || e.Code == websocket.CloseGoingAway) {
+				 log.Printf("WebSocket connection closed normally by client %s in room %s.", client.UserID, client.InterviewID)
+			} else {
+				 log.Printf("WebSocket unknown read error/close for client %s in room %s: %v", client.UserID, client.InterviewID, err)
 			}
-			break // Exit loop on error or close
+			break // Exit loop on any error or close
 		}
 
-		log.Printf("Received message from %s in room %s: Type=%v", client.UserID, client.InterviewID, message["type"])
+		// log.Printf("Received message from %s in room %s: Type=%v", client.UserID, client.InterviewID, message["type"])
 
-
-        // Handle different message types
         msgType, typeOk := message["type"].(string)
         if !typeOk {
             log.Printf("Invalid message format from %s: 'type' field missing or not a string", client.UserID)
+            hub.SendMessageTo(conn, map[string]interface{}{"type": "error", "message": "Invalid message format: 'type' missing or not string"})
             continue
         }
 
 		switch msgType {
 		case "chat-message":
              var chatMsg models.ChatMessage
-             // More robust unmarshaling needed if 'message' is nested
-             msgData, msgDataOk := message["message"].(map[string]interface{})
-             if !msgDataOk {
-                 log.Printf("Invalid 'chat-message' data format from %s", client.UserID)
-                 continue
-             }
-             // Use helper or direct assignment (be careful with type assertions)
-             chatMsg.Text, _ = msgData["text"].(string)
-             // Assuming senderName and timestamp are generated/validated server-side or trusted from client
+             msgPayload, payloadOk := message["message"]
+             if !payloadOk { log.Printf("Invalid 'chat-message' format from %s: 'message' payload missing", client.UserID); continue }
+             msgData, err := json.Marshal(msgPayload)
+             if err != nil { log.Printf("Error marshaling chat payload from %s: %v", client.UserID, err); continue }
+             if err := json.Unmarshal(msgData, &chatMsg); err != nil { log.Printf("Invalid 'chat-message' data format from %s: %v", client.UserID, err); continue }
              chatMsg.InterviewID = interviewID
              chatMsg.SenderID = userID
-             chatMsg.SenderName = "" // Fetch or use name from user data if needed
-             chatMsg.Timestamp = time.Now().UnixMilli() // Set server time
-
-             // TODO: Optionally store chat message in DB
+             chatMsg.Timestamp = time.Now().UnixMilli()
+             if chatMsg.SenderName == "" { chatMsg.SenderName = "User_" + userID[:4] }
+             // TODO: Store chat message in DB?
              hub.BroadcastMessage(interviewID, conn, map[string]interface{}{"type": "chat-message", "message": chatMsg})
 
 		case "code-update":
             code, codeOk := message["code"].(string)
-            if !codeOk {
-                log.Printf("Invalid 'code-update' format from %s", client.UserID)
-                continue
-            }
-            hub.BroadcastMessage(interviewID, conn, map[string]interface{}{
-                "type": "code-update",
-                "code": code,
-                "senderId": userID, // Let clients know who sent it
-            })
-
+            if !codeOk { log.Printf("Invalid 'code-update' from %s: 'code' missing/not string", client.UserID); continue }
+            hub.BroadcastMessage(interviewID, conn, map[string]interface{}{ "type": "code-update", "code": code, "senderId": userID })
 
 		case "whiteboard-update":
-            wbData, dataOk := message["data"] // data can be complex
-            if !dataOk {
-                 log.Printf("Invalid 'whiteboard-update' format from %s", client.UserID)
-                continue
-            }
-			hub.BroadcastMessage(interviewID, conn, map[string]interface{}{
-                "type": "whiteboard-update",
-                "data": wbData,
-                "senderId": userID,
-            })
+            wbData, dataOk := message["data"]
+            actionType, actionOk := message["actionType"].(string) // Expect actionType: "draw", "clear"
+            if !dataOk || !actionOk { log.Printf("Invalid 'whiteboard-update' from %s: 'data' or 'actionType' missing", client.UserID); continue }
+			hub.BroadcastMessage(interviewID, conn, map[string]interface{}{ "type": "whiteboard-update", "actionType": actionType, "data": wbData, "senderId": userID })
 
-        // --- WebRTC Signaling ---
-        case "sending-signal": // Initiator sends signal to peer
+        // --- WebRTC Signaling (Remains largely the same) ---
+        case "sending-signal": // Initiator sends signal TO a specific peer
             userToSignal, utsOk := message["userToSignal"].(string)
-            signalData, sdOk := message["signal"]
-            if !utsOk || !sdOk {
-                 log.Printf("Invalid 'sending-signal' message from %s: Missing fields", client.UserID)
+            signalData, sdOk := message["signal"] // signal can be offer, answer, or ICE candidate
+            callerId, callerOk := message["callerId"].(string) // Ensure callerId is present
+            if !utsOk || !sdOk || !callerOk || callerId != client.UserID {
+                 log.Printf("Invalid 'sending-signal' from %s: Missing fields or callerId mismatch", client.UserID)
+                 hub.SendMessageTo(conn, map[string]interface{}{"type": "error", "message": "Invalid sending-signal format or caller ID"})
                  continue
             }
-             // Find the connection of the user to signal
-            hub.Mutex.RLock() // Lock for reading hub state
-            peerConn, peerClient := hub.findPeerConnLocked(interviewID, client.UserID)
+            // Find the target peer's connection
+            hub.Mutex.RLock()
+            var targetConn *websocket.Conn
+            var targetClient *Client
+             if room, ok := hub.Rooms[interviewID]; ok {
+                 for tConn, tClient := range room {
+                     if tClient.UserID == userToSignal {
+                         targetConn = tConn
+                         targetClient = tClient
+                         break
+                     }
+                 }
+             }
             hub.Mutex.RUnlock()
 
-            if peerConn != nil && peerClient.UserID == userToSignal {
-                log.Printf("Relaying 'sending-signal' from %s to %s in room %s", client.UserID, userToSignal, interviewID)
-                err := hub.SendMessageTo(peerConn, map[string]interface{}{
-                    "type": "user-joined", // Peer receives this when someone initiates a connection TO them
+            if targetConn != nil && targetClient != nil {
+                log.Printf("Relaying 'sending-signal' from %s to %s in room %s", callerId, userToSignal, interviewID)
+                // Forward the signal, adding who it's from (callerId)
+                err := hub.SendMessageTo(targetConn, map[string]interface{}{
+                    "type": "user-joined", // Receiving client interprets this as an incoming signal
                     "signal": signalData,
-                    "callerId": client.UserID, // The ID of the user sending the initial signal
+                    "callerId": callerId, // ID of the user who sent the original signal
                 })
-                if err != nil {
-                     log.Printf("Error relaying 'sending-signal' to %s: %v", userToSignal, err)
-                 }
+                if err != nil { log.Printf("Error relaying 'sending-signal' to %s: %v", userToSignal, err) }
             } else {
-                 log.Printf("User %s tried to signal non-existent or incorrect user %s in room %s", client.UserID, userToSignal, interviewID)
-                 // Optionally send an error back to the sender
-                 // hub.SendMessageTo(conn, map[string]interface{}{"type": "signal-error", "message": "Peer not found"})
+                 log.Printf("User %s tried to signal non-existent or incorrect user %s in room %s", callerId, userToSignal, interviewID)
+                 hub.SendMessageTo(conn, map[string]interface{}{"type": "error", "message": "Peer not found or not ready"})
             }
 
-
-        case "returning-signal": // Peer returns signal to initiator
+        case "returning-signal": // Peer returns signal TO the original caller
              callerId, ciOk := message["callerId"].(string) // The ID of the user who INITIATED the connection
-             signalData, sdOk := message["signal"]
+             signalData, sdOk := message["signal"] // The signal data (answer or ICE candidate)
               if !ciOk || !sdOk {
-                 log.Printf("Invalid 'returning-signal' message from %s: Missing fields", client.UserID)
+                 log.Printf("Invalid 'returning-signal' from %s: Missing 'callerId' or 'signal'", client.UserID)
+                 hub.SendMessageTo(conn, map[string]interface{}{"type": "error", "message": "Invalid returning-signal format"})
                  continue
              }
             // Find the connection of the original caller
              hub.Mutex.RLock()
-             callerConn, callerClient := hub.findPeerConnLocked(interviewID, client.UserID) // Find conn matching callerId
+             var callerConn *websocket.Conn
+             if room, ok := hub.Rooms[interviewID]; ok {
+                 for c, cl := range room {
+                     if cl.UserID == callerId {
+                         callerConn = c
+                         break
+                     }
+                 }
+             }
              hub.Mutex.RUnlock()
 
-             if callerConn != nil && callerClient.UserID == callerId {
+             if callerConn != nil {
                  log.Printf("Relaying 'returning-signal' from %s to %s in room %s", client.UserID, callerId, interviewID)
                 err := hub.SendMessageTo(callerConn, map[string]interface{}{
-                    "type": "receiving-returned-signal", // Caller receives this to complete connection
+                    "type": "receiving-returned-signal", // Caller receives this to complete connection/add candidate
                     "signal": signalData,
-                    "id": client.UserID, // ID of the user who sent the return signal (the peer)
+                    "id": client.UserID, // ID of the user who sent the return signal (the current client)
                 })
-                 if err != nil {
-                     log.Printf("Error relaying 'returning-signal' to %s: %v", callerId, err)
-                 }
+                 if err != nil { log.Printf("Error relaying 'returning-signal' to %s: %v", callerId, err) }
             } else {
-                 log.Printf("User %s tried to return signal to non-existent or incorrect caller %s in room %s", client.UserID, callerId, interviewID)
-                  // Optionally send an error back to the sender
-                 // hub.SendMessageTo(conn, map[string]interface{}{"type": "signal-error", "message": "Original caller not found"})
+                 log.Printf("User %s tried to return signal to non-existent caller %s in room %s", client.UserID, callerId, interviewID)
+                  hub.SendMessageTo(conn, map[string]interface{}{"type": "error", "message": "Original caller not found"})
             }
 
          case "end-interview":
             log.Printf("User %s initiated 'end-interview' for room %s", client.UserID, interviewID)
-            // TODO: Update interview status in DB to 'completed' or 'cancelled' by emitting an event or calling a service
-             hub.BroadcastMessage(interviewID, conn, map[string]interface{}{"type": "interview-ended"})
+            _, err := interviewCollection.UpdateOne(
+                 context.Background(),
+                 bson.M{"_id": interviewOID},
+                 bson.M{"$set": bson.M{"status": "completed", "updatedAt": time.Now().UTC()}},
+            )
+            if err != nil { log.Printf("Error updating interview status to completed for %s: %v", interviewID, err) }
 
-             // Force close connections after broadcasting (needs careful locking)
-             go func() { // Use goroutine to avoid blocking the read loop
-                 hub.Mutex.Lock() // Acquire full lock to modify hub state
+             hub.Mutex.RLock()
+             hub.broadcastMessageLocked(interviewID, nil, map[string]interface{}{"type": "interview-ended"})
+             hub.Mutex.RUnlock()
+
+             // Goroutine to close connections and clean up room
+             go func(roomID string) {
+                 hub.Mutex.Lock()
                  defer hub.Mutex.Unlock()
-                 if room, ok := hub.Rooms[interviewID]; ok {
-                     log.Printf("Force closing all connections in room %s due to 'end-interview'", interviewID)
+                 if room, ok := hub.Rooms[roomID]; ok {
+                     log.Printf("Force closing all connections in room %s due to 'end-interview'", roomID)
                      for connToClose, clientToClose := range room {
-                         if connToClose != conn { // Don't close the sender's connection immediately
-                             log.Printf("Closing connection for user %s", clientToClose.UserID)
-                             connToClose.Close()
-                             // Removal will happen via defer in the client's read loop
-                         }
+                         log.Printf("Closing connection for user %s", clientToClose.UserID)
+                         connToClose.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Interview ended"))
+                         connToClose.Close()
                      }
+                     delete(hub.Rooms, roomID)
+                     log.Printf("Room %s removed after 'end-interview'.", roomID)
                  }
-             }()
-             // The sender's loop will exit naturally after this, triggering their defer hub.RemoveClient
+             }(interviewID)
 
 		default:
 			log.Printf("Unknown message type received from %s: %s", client.UserID, msgType)
+            hub.SendMessageTo(conn, map[string]interface{}{"type": "error", "message": "Unknown message type: "+msgType})
 		}
 	}
+	log.Printf("Exited message read loop for client %s.", client.UserID) // Log loop exit
 }
 
-// Helper to marshal message data (replace direct map access later)
-// func marshalToStruct(data interface{}, target interface{}) error {
-//     bytes, err := json.Marshal(data)
-//     if err != nil {
-//         return err
-//     }
-//     return json.Unmarshal(bytes, target)
-// }
+
+    
