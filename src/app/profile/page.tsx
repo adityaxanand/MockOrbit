@@ -23,9 +23,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/providers/AuthProvider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { History, Loader2, UserCircle, Edit3 } from 'lucide-react';
+import { History, Loader2, UserCircle, Edit3, Copy, Check } from 'lucide-react';
 import Link from 'next/link';
-import { Badge } from "@/components/ui/badge"; // Added Badge component
+import { Badge } from "@/components/ui/badge";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
 
@@ -33,9 +33,10 @@ const profileSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }).max(50, { message: "Name cannot exceed 50 characters." }),
   email: z.string().email().readonly(),
   profile_picture_url: z.string().url({ message: "Invalid URL. Please enter a valid image URL or leave empty." }).optional().or(z.literal('')),
+  id: z.string().readonly(), // Added ID field for display
 });
 
-type ProfileFormValues = Omit<z.infer<typeof profileSchema>, 'email'>;
+type ProfileFormValues = Omit<z.infer<typeof profileSchema>, 'email' | 'id'>;
 
 interface InterviewHistoryItem {
   id: string;
@@ -43,22 +44,23 @@ interface InterviewHistoryItem {
   interviewer: { id: string; name: string };
   interviewee: { id: string; name: string };
   topic: string;
-  status: 'Completed' | 'Cancelled' | 'Scheduled' | 'in_progress'; // Added 'in_progress'
+  status: 'Completed' | 'Cancelled' | 'Scheduled' | 'in_progress';
   feedback_status: 'Received' | 'Provided' | 'Pending' | 'N/A';
-  role_played?: 'Interviewer' | 'Interviewee'; // Added for clarity in table
-  counterpart_name?: string; // Added for clarity
+  role_played?: 'Interviewer' | 'Interviewee';
+  counterpart_name?: string;
 }
 
 export default function ProfilePage() {
-  const { user, token, isLoading: isAuthLoading, login, activeRole } = useAuth();
+  const { user, token, isLoading: isAuthLoading, login } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   const [history, setHistory] = useState<InterviewHistoryItem[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
+  const [copiedId, setCopiedId] = useState(false);
 
   const form = useForm<z.infer<typeof profileSchema>>({
     resolver: zodResolver(profileSchema),
-    defaultValues: { name: "", email: "", profile_picture_url: "" },
+    defaultValues: { name: "", email: "", profile_picture_url: "", id: "" },
   });
 
  useEffect(() => {
@@ -67,6 +69,7 @@ export default function ProfilePage() {
         name: user.name || "",
         email: user.email || "",
         profile_picture_url: user.profile_picture_url || "",
+        id: user.id || "",
       });
     }
   }, [user, form]);
@@ -79,7 +82,6 @@ export default function ProfilePage() {
        }
       setIsHistoryLoading(true);
       try {
-        // Fetch all completed/cancelled interviews (could expand to include 'in_progress' if desired)
         const response = await fetch(`${API_URL}/users/${user.id}/interviews?status=completed,cancelled,in_progress`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -121,7 +123,7 @@ export default function ProfilePage() {
        });
        const updatedUserData = await response.json();
        if (!response.ok) throw new Error(updatedUserData.error || `Profile update failed: ${response.status}`);
-       if (token && updatedUserData) login(token, updatedUserData);
+       if (token && updatedUserData) login(token, updatedUserData); // login updates the user in AuthContext
        else throw new Error("Failed to update local user state after profile update.");
        toast({ title: "Profile Updated!", description: "Your information has been successfully saved.", variant: "default" });
      } catch (error: any) {
@@ -130,6 +132,18 @@ export default function ProfilePage() {
        setIsSubmitting(false);
      }
    }
+
+   const handleCopyId = () => {
+    if (user?.id) {
+      navigator.clipboard.writeText(user.id).then(() => {
+        setCopiedId(true);
+        toast({ title: "Copied!", description: "Your Peer ID has been copied to the clipboard.", variant: "default" });
+        setTimeout(() => setCopiedId(false), 2000);
+      }).catch(err => {
+        toast({ title: "Copy Failed", description: "Could not copy ID to clipboard.", variant: "destructive" });
+      });
+    }
+  };
 
    const getInitials = (name?: string | null) => (name ? name.split(' ').map(n => n[0]).join('').toUpperCase() : "??");
    const formatHistoryDate = (isoString: string): string => {
@@ -141,7 +155,7 @@ export default function ProfilePage() {
    const getFeedbackBadgeVariant = (status?: string): "default" | "secondary" | "destructive" | "outline" => {
     switch (status) {
         case 'Received': return 'default';
-        case 'Provided': return 'default'; // Can use same as received or a different one like 'success' if you add it
+        case 'Provided': return 'default';
         case 'Pending': return 'secondary';
         case 'N/A':
         case 'Cancelled': return 'outline';
@@ -171,16 +185,17 @@ export default function ProfilePage() {
           <AppLayout>
               <div className="space-y-8 p-2 md:p-0">
                 <Skeleton className="h-10 w-1/3" />
-                <Card className="shadow-sm">
+                <Card className="shadow-sm border-border">
                     <CardHeader><Skeleton className="h-7 w-1/4" /></CardHeader>
                     <CardContent className="space-y-6">
                         <div className="flex items-center space-x-4"><Skeleton className="h-20 w-20 rounded-full" /><Skeleton className="h-10 flex-1" /></div>
                         <Skeleton className="h-10 w-full" />
                         <Skeleton className="h-10 w-full" />
+                        <Skeleton className="h-10 w-full" />
                     </CardContent>
                      <CardFooter><Skeleton className="h-10 w-28 rounded-md" /></CardFooter>
                 </Card>
-                 <Card className="shadow-sm">
+                 <Card className="shadow-sm border-border">
                     <CardHeader><Skeleton className="h-7 w-1/3" /></CardHeader>
                     <CardContent>{renderHistoryLoadingSkeletons(3)}</CardContent>
                  </Card>
@@ -209,13 +224,13 @@ export default function ProfilePage() {
         <Card className="shadow-lg border-border hover:shadow-xl transition-shadow">
             <CardHeader>
                 <CardTitle className="flex items-center text-xl"><Edit3 className="mr-2 h-5 w-5"/>Account Information</CardTitle>
-                <CardDescription>Manage your personal details. Email address cannot be changed.</CardDescription>
+                <CardDescription>Manage your personal details. Email address and Peer ID cannot be changed.</CardDescription>
             </CardHeader>
            <CardContent>
              <Form {...form}>
                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                  <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6 mb-6">
-                    <Avatar className="h-24 w-24 ring-0 ring-primary ring-offset-0 ring-offset-background"> {/*Ring offset and ring were 2 */}
+                    <Avatar className="h-24 w-24 ring-2 ring-primary ring-offset-2 ring-offset-background">
                         <AvatarImage src={form.watch('profile_picture_url') || user.profile_picture_url || undefined} alt={user.name || 'User Avatar'} />
                         <AvatarFallback className="text-3xl bg-muted text-muted-foreground">{getInitials(user.name)}</AvatarFallback>
                     </Avatar>
@@ -262,6 +277,25 @@ export default function ProfilePage() {
                         </FormItem>
                     )}
                  />
+                  <FormField
+                    control={form.control}
+                    name="id"
+                    render={({ field }) => (
+                        <FormItem>
+                           <FormLabel className="text-foreground">Peer ID</FormLabel>
+                           <div className="flex items-center gap-2">
+                               <FormControl>
+                                   <Input value={user.id || ""} readOnly disabled className="bg-muted/60 border-input cursor-not-allowed flex-grow"/>
+                               </FormControl>
+                               <Button type="button" variant="outline" size="icon" onClick={handleCopyId} title="Copy Peer ID" className="shrink-0">
+                                   {copiedId ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                               </Button>
+                           </div>
+                           <FormDescription className="text-xs">This is your unique identifier for scheduling interviews.</FormDescription>
+                           <FormMessage />
+                        </FormItem>
+                    )}
+                 />
                  <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground py-2.5 px-6 rounded-lg shadow-md hover:shadow-lg transition-all" disabled={isSubmitting}>
                    {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving Changes...</> : "Save Changes"}
                  </Button>
@@ -301,7 +335,7 @@ export default function ProfilePage() {
                                         <Badge variant={
                                             item.status === 'Completed' ? 'default' :
                                             item.status === 'Cancelled' ? 'destructive' :
-                                            item.status === 'in_progress' ? 'outline' : // Consider a specific color for in_progress
+                                            item.status === 'in_progress' ? 'outline' :
                                             'secondary'
                                         }>
                                         {item.status}

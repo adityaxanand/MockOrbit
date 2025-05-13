@@ -1,0 +1,26 @@
+# Ignore node modules and local build artifacts
+node_modules
+.next
+out
+dist
+
+# Ignore Git metadata
+.git
+.gitignore
+
+# Ignore environment files (keep them local)
+# .env
+# .env.*
+/backend/cmd/server/.env
+
+# Ignore Docker artifacts
+Dockerfile*
+docker-compose*.yml
+
+# Ignore VS Code settings
+.vscode
+
+# Ignore docs & logs
+docs
+*.log
+*.md

@@ -1,115 +1,122 @@
-
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import AppLayout from "@/components/shared/AppLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/providers/AuthProvider';
-import type { DateRange } from "react-day-picker";
-import { addDays, format } from "date-fns";
-import { Clock, Users, Book, Send, Loader2, Info, SendHorizonal } from 'lucide-react';
+import { format } from "date-fns";
+import { Clock, Users, BookOpenIcon, SendHorizonal, Loader2, CalendarPlus, Info, Search, CheckCircle, X, Send } from 'lucide-react';
 import { Skeleton } from "@/components/ui/skeleton";
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { PopoverAnchor } from '@radix-ui/react-popover';
 
-// Define API URL (consider moving to environment variables)
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
 
-// --- Interfaces for fetched data ---
 interface AvailableSlot {
-    date: string; // YYYY-MM-DD format
-    time: string; // HH:mm format (24-hour) - Assume UTC from backend for consistency
+    date: string;
+    time: string;
     available: boolean;
 }
 
 interface Peer {
     id: string;
     name: string;
+    email?: string;
 }
 
 interface Topic {
-    id: string; // Use ID if backend provides it
+    id: string;
     name: string;
 }
 
+const debounce = <F extends (...args: any[]) => any>(func: F, delay: number) => {
+  let timeoutId: ReturnType<typeof setTimeout>;
+  return (...args: Parameters<F>): void => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      func(...args);
+    }, delay);
+  };
+};
 
 export default function SchedulePage() {
   const [date, setDate] = React.useState<Date | undefined>(new Date());
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
-  const [selectedPeer, setSelectedPeer] = useState<string | null>(null); // Store Peer ID
-  const [selectedTopic, setSelectedTopic] = useState<string | null>(null); // Store Topic Name/ID
+  
+  const [peerSearchQuery, setPeerSearchQuery] = useState<string>("");
+  const [selectedPeer, setSelectedPeer] = useState<string | null>(null);
+  const [selectedPeerInfo, setSelectedPeerInfo] = useState<Peer | null>(null);
+  const [peerSearchResults, setPeerSearchResults] = useState<Peer[]>([]);
+  const [isSearchingPeers, setIsSearchingPeers] = useState<boolean>(false);
+  const [isPeerPopoverOpen, setIsPeerPopoverOpen] = useState<boolean>(false);
+  const allPeersRef = useRef<Peer[]>([]);
+  const peerInputRef = useRef<HTMLInputElement>(null);
+
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+  const [topicSearchQuery, setTopicSearchQuery] = useState<string>("");
+  const [selectedTopicInfo, setSelectedTopicInfo] = useState<Topic | null>(null);
+  const [topicSearchResults, setTopicSearchResults] = useState<Topic[]>([]);
+  const [isSearchingTopics, setIsSearchingTopics] = useState<boolean>(false);
+  const [isTopicPopoverOpen, setIsTopicPopoverOpen] = useState<boolean>(false);
+  const allTopicsRef = useRef<Topic[]>([]);
+  const topicInputRef = useRef<HTMLInputElement>(null);
+
+
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // State for fetched data
   const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
-  const [peers, setPeers] = useState<Peer[]>([]);
-  const [topics, setTopics] = useState<Topic[]>([]);
-  const [filteredTopics, setFilteredTopics] = useState<Topic[]>([]); // Separate state for filtered topics
 
-  // Loading states
-  const [isLoadingSlots, setIsLoadingSlots] = useState(true);
-  const [isLoadingPeers, setIsLoadingPeers] = useState(true);
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  const [isLoadingInitialPeers, setIsLoadingInitialPeers] = useState(true);
   const [isLoadingTopics, setIsLoadingTopics] = useState(true);
 
   const { toast } = useToast();
   const { user, token, activeRole, isLoading: isAuthLoading } = useAuth();
-
-
-   // --- Data Fetching Effects ---
+  
    useEffect(() => {
-    // Fetch Peers
-    const fetchPeers = async () => {
-        if (!token || !user?.id) return; // Wait for token and user ID
-        setIsLoadingPeers(true);
+    const fetchInitialPeers = async () => {
+        if (!token || !user?.id) return;
+        setIsLoadingInitialPeers(true);
         try {
-            const response = await fetch(`${API_URL}/users/peers`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const response = await fetch(`${API_URL}/users/peers`, { headers: { Authorization: `Bearer ${token}` } });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Failed to fetch peers');
-
-            setPeers(data || []); // Ensure data is array
+            allPeersRef.current = data || [];
         } catch (error: any) {
-            toast({ title: "Error", description: `Could not load peers: ${error.message}`, variant: "destructive" });
-            setPeers([]);
+            toast({ title: "Error Loading Peers", description: error.message, variant: "destructive" });
+            allPeersRef.current = [];
         } finally {
-            setIsLoadingPeers(false);
+            setIsLoadingInitialPeers(false);
         }
     };
-
-     // Fetch Topics
      const fetchTopics = async () => {
-        if (!token) return; // Wait for token
+        if (!token) return;
         setIsLoadingTopics(true);
         try {
-            const response = await fetch(`${API_URL}/topics`, { // Use the /topics endpoint
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const response = await fetch(`${API_URL}/topics`, { headers: { Authorization: `Bearer ${token}` } });
              const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Failed to fetch topics');
-            setTopics(data || []); // Ensure data is array
-            setFilteredTopics(data || []); // Initialize filtered topics
-            setTopics(data || []); // Ensure data is array
+            allTopicsRef.current = data || [];
         } catch (error: any) {
-            toast({ title: "Error", description: `Could not load topics: ${error.message}`, variant: "destructive" });
-            setTopics([]);
+            toast({ title: "Error Loading Topics", description: error.message, variant: "destructive" });
+            allTopicsRef.current = [];
         } finally {
             setIsLoadingTopics(false);
         }
     };
-
-    if (!isAuthLoading) { // Fetch only when auth has loaded
-        fetchPeers();
+    if (!isAuthLoading) {
+        fetchInitialPeers();
         fetchTopics();
     }
    }, [token, toast, isAuthLoading, user?.id]);
 
     useEffect(() => {
-        // Fetch Available Slots when date changes
         const fetchSlots = async () => {
             if (!date || !token) {
                  setIsLoadingSlots(false);
@@ -117,312 +124,396 @@ export default function SchedulePage() {
                  return;
             }
             setIsLoadingSlots(true);
-            setSelectedTime(null); // Reset selected time when date changes
+            setSelectedTime(null);
             const formattedDate = format(date, 'yyyy-MM-dd');
             try {
-                const response = await fetch(`${API_URL}/availability?date=${formattedDate}`, { // Use /availability endpoint
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                const response = await fetch(`${API_URL}/availability?date=${formattedDate}`, { headers: { Authorization: `Bearer ${token}` } });
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.error || 'Failed to fetch slots');
-
-                setAvailableSlots(data || []); // Ensure data is array
+                setAvailableSlots(data || []);
             } catch (error: any) {
-                toast({ title: "Error", description: `Could not load time slots for ${formattedDate}: ${error.message}`, variant: "destructive" });
+                toast({ title: "Error Loading Slots", description: `Could not load time slots for ${formattedDate}: ${error.message}`, variant: "destructive" });
                 setAvailableSlots([]);
             } finally {
                 setIsLoadingSlots(false);
             }
         };
-
-        if (!isAuthLoading) { // Fetch only when auth has loaded
-            fetchSlots();
-        }
+        if (!isAuthLoading && token) fetchSlots();
     }, [date, token, toast, isAuthLoading]);
-   // --- End Data Fetching ---
+
+  const handlePeerSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value;
+    setPeerSearchQuery(query);
+    if (selectedPeerInfo) { 
+        setSelectedPeer(null);
+        setSelectedPeerInfo(null);
+    }
+    if (query.trim()) {
+        setIsPeerPopoverOpen(true);
+    } else {
+        setPeerSearchResults([]); 
+        setIsPeerPopoverOpen(false);
+    }
+  };
+
+  const debouncedPeerSearch = useCallback(
+    debounce((query: string) => {
+      const trimmedQuery = query.trim();
+      if (!trimmedQuery) {
+        setPeerSearchResults([]);
+        setIsSearchingPeers(false);
+        setIsPeerPopoverOpen(false); 
+        return;
+      }
+      setIsSearchingPeers(true);
+      const filteredPeers = allPeersRef.current.filter(
+        (p) =>
+          p.name.toLowerCase().includes(trimmedQuery.toLowerCase()) ||
+          (p.email && p.email.toLowerCase().includes(trimmedQuery.toLowerCase())) ||
+          p.id.toLowerCase().includes(trimmedQuery.toLowerCase())
+      );
+      setPeerSearchResults(filteredPeers);
+      setIsSearchingPeers(false);
+      setIsPeerPopoverOpen(true); 
+    }, 300),
+    [] 
+  );
+
+  useEffect(() => {
+    if (!selectedPeerInfo) { 
+        debouncedPeerSearch(peerSearchQuery);
+    }
+  }, [peerSearchQuery, selectedPeerInfo, debouncedPeerSearch]);
+
+  const handleSelectPeer = (peer: Peer) => {
+    setSelectedPeer(peer.id);
+    setSelectedPeerInfo(peer);
+    setPeerSearchQuery(peer.name); 
+    setPeerSearchResults([]);      
+    setIsPeerPopoverOpen(false);   
+  };
+
+  const handleTopicSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value;
+    setTopicSearchQuery(query);
+    if (selectedTopicInfo) {
+        setSelectedTopic(null);
+        setSelectedTopicInfo(null);
+    }
+    if (query.trim()) {
+        setIsTopicPopoverOpen(true);
+    } else {
+        setTopicSearchResults([]);
+        setIsTopicPopoverOpen(false);
+    }
+  };
+
+  const debouncedTopicSearch = useCallback(
+    debounce((query: string) => {
+      const trimmedQuery = query.trim();
+      if (!trimmedQuery) {
+        setTopicSearchResults([]);
+        setIsSearchingTopics(false);
+        setIsTopicPopoverOpen(false);
+        return;
+      }
+      setIsSearchingTopics(true);
+      const filteredTopics = allTopicsRef.current.filter(
+        (t) => t.name.toLowerCase().includes(trimmedQuery.toLowerCase())
+      );
+      setTopicSearchResults(filteredTopics);
+      setIsSearchingTopics(false);
+      setIsTopicPopoverOpen(true);
+    }, 300),
+    [] 
+  );
+
+  useEffect(() => {
+    if (!selectedTopicInfo) {
+        debouncedTopicSearch(topicSearchQuery);
+    }
+  }, [topicSearchQuery, selectedTopicInfo, debouncedTopicSearch]);
+
+  const handleSelectTopic = (topic: Topic) => {
+    setSelectedTopic(topic.id); 
+    setSelectedTopicInfo(topic);
+    setTopicSearchQuery(topic.name);
+    setTopicSearchResults([]);
+    setIsTopicPopoverOpen(false);
+  };
 
   const handleTimeSelect = (time: string, isAvailable: boolean) => {
-      if (isAvailable) {
-          setSelectedTime(time);
-      } else {
-          toast({ title: "Slot Unavailable", description: "This time slot is not available.", variant: "destructive"});
-      }
+      if (isAvailable) setSelectedTime(time);
+      else toast({ title: "Slot Unavailable", description: "This time slot is already booked or past.", variant: "destructive"});
   };
 
   const handleSubmit = async () => {
     if (!date || !selectedTime || !selectedPeer || !selectedTopic || !user || !activeRole || !token) {
-      toast({ title: "Incomplete Information", description: "Please select a date, time, peer, and topic.", variant: "destructive" });
+      toast({ title: "Incomplete Information", description: "Please select a date, time, peer, and topic to schedule.", variant: "destructive" });
       return;
     }
-
     setIsSubmitting(true);
-
-    // Combine date and time, ensuring it's treated as UTC for the backend
     const scheduledDateTimeUTC = new Date(`${format(date, 'yyyy-MM-dd')}T${selectedTime}:00.000Z`);
-
+    
     const scheduleData = {
       interviewee_id: activeRole === 'interviewee' ? user.id : selectedPeer,
       interviewer_id: activeRole === 'interviewer' ? user.id : selectedPeer,
-      scheduled_time: scheduledDateTimeUTC.toISOString(), // Send as ISO 8601 UTC string
-      topic: selectedTopic, // Send the selected topic name/ID
+      scheduled_time: scheduledDateTimeUTC.toISOString(),
+      topic: selectedTopicInfo?.name || selectedTopic, 
     };
 
-    console.log("Attempting to schedule interview with data:", JSON.stringify(scheduleData));
+    console.log("Scheduling data:", scheduleData);
 
     try {
         const response = await fetch(`${API_URL}/interviews`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify(scheduleData)
         });
+        
+        let responseData: any = {};
+        const responseText = await response.text();
+        console.log("Raw schedule response text:", responseText);
 
-        // Handle potential non-JSON responses, especially for errors
-        let responseData = {};
-        let responseText = "";
         try {
-            responseText = await response.text();
-             if (responseText) {
-                 responseData = JSON.parse(responseText);
-             }
-        } catch (jsonError) {
-            console.error("Failed to parse response as JSON. Raw text:", responseText);
-            // If it failed to parse but the status was not OK, we use the text as the error
-            if (!response.ok) {
-                 throw new Error(`Scheduling failed with status ${response.status}. Server response: ${responseText || "Empty"}`);
-            }
-            // If it failed to parse but status was OK, it's weird, log warning
-            console.warn("Received OK status but failed to parse JSON response.");
+            if(responseText) responseData = JSON.parse(responseText);
+        } catch (e) {
+            console.error("Failed to parse schedule response JSON:", e);
+            if (response.ok && responseText === "") {  } 
+            else { throw new Error(`Could not parse server response. Status: ${response.status}. Body: ${responseText}`); }
         }
-
-        console.log(`Backend response status: ${response.status}`);
-        console.log("Backend response data (parsed):", responseData);
-
-
+        
         if (!response.ok) {
-            // Use the parsed error message if available, otherwise use status/text
-            const errorMsg = (responseData as any)?.error || `Scheduling failed with status: ${response.status}`;
-            const errorDetails = (responseData as any)?.details;
-            console.error(`Scheduling failed: ${errorMsg}`, errorDetails ? `Details: ${errorDetails}` : '');
-            throw new Error(`${errorMsg}${errorDetails ? ` (${errorDetails})` : ''}`);
+             console.error("Scheduling API error:", responseData);
+             throw new Error(responseData.error || responseData.details || `Scheduling failed with status: ${response.status}`);
         }
-
-        // If response is OK
-        const newInterview = responseData as any; // Cast to any to access potential ID
-
-        // Check if the response actually contained the expected data (e.g., an ID)
-        if (!newInterview || !newInterview.id) {
-            console.warn("Received successful response but missing expected data (e.g., interview ID). Response:", newInterview);
-            toast({
-                title: "Interview Scheduled (Confirmation Pending)",
-                description: `Request sent successfully. Please check your dashboard for confirmation.`,
-                variant: "default"
-            });
-        } else {
-             const peerName = peers.find(p => p.id === selectedPeer)?.name || 'peer';
-             const formattedDate = format(scheduledDateTimeUTC, 'PPP p'); // Format for display
-            toast({
-                title: "Interview Scheduled Successfully!",
-                description: `Interview with ${peerName} on topic "${selectedTopic}" scheduled for ${formattedDate} (UTC).`,
-            });
-        }
-
-
-        // Reset form state
+        
+        const peerName = selectedPeerInfo?.name || 'your peer';
+        const topicName = selectedTopicInfo?.name || selectedTopic;
+        toast({
+            title: "Interview Scheduled!",
+            description: `Your interview with ${peerName} on "${topicName}" for ${format(scheduledDateTimeUTC, 'PPP p')} (UTC) is confirmed.`,
+            variant: "default",
+        });
         setDate(new Date());
-        setSelectedTime(null);
-        setSelectedPeer(null);
+        setSelectedTime(null); 
+        setSelectedPeer(null); 
+        setSelectedPeerInfo(null);
+        setPeerSearchQuery("");
         setSelectedTopic(null);
+        setSelectedTopicInfo(null);
+        setTopicSearchQuery("");
 
-        // Optionally, refetch slots for the current date to show the newly booked slot
-        const fetchSlotsAgain = async () => {
-             if (!date || !token) return;
-             setIsLoadingSlots(true);
-             const formattedDate = format(date, 'yyyy-MM-dd');
-             try {
-                 const res = await fetch(`${API_URL}/availability?date=${formattedDate}`, { headers: { Authorization: `Bearer ${token}` } });
-                 const d = await res.json();
-                 if (res.ok) setAvailableSlots(d || []); else setAvailableSlots([]);
-             } catch { setAvailableSlots([]); }
-             finally { setIsLoadingSlots(false); }
-         };
-         fetchSlotsAgain();
+        if(date && token) { 
+            const fetchSlots = async () => {
+                if (!date || !token) {
+                     setAvailableSlots([]);
+                     return;
+                }
+                const formattedDate = format(date, 'yyyy-MM-dd');
+                try {
+                    const res = await fetch(`${API_URL}/availability?date=${formattedDate}`, { headers: { Authorization: `Bearer ${token}` } });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Failed to fetch slots');
+                    setAvailableSlots(data || []);
+                } catch (error: any) {
+                    setAvailableSlots([]);
+                }
+            };
+            fetchSlots();
+        }
 
     } catch (error: any) {
-        console.error("Scheduling Error caught in handleSubmit:", error);
-        // Provide a user-friendly error message from the caught error
-        toast({ title: "Scheduling Failed", description: error.message || "An unexpected error occurred.", variant: "destructive" });
+        console.error("Scheduling submission error:", error);
+        toast({ title: "Scheduling Failed", description: error.message || "An unexpected error occurred. Please try again.", variant: "destructive" });
     } finally {
         setIsSubmitting(false);
     }
   };
 
-
-  // Determine if the schedule button should be enabled
   const canSubmit = !!date && !!selectedTime && !!selectedPeer && !!selectedTopic && !isSubmitting && !isAuthLoading;
 
+  if (isAuthLoading) {
+    return (
+        <AppLayout>
+             <div className="space-y-8">
+                 <Skeleton className="h-10 w-1/3 mb-6" />
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <Skeleton className="h-96 rounded-lg" />
+                    <Skeleton className="h-96 rounded-lg" />
+                    <Skeleton className="h-64 rounded-lg" />
+                 </div>
+            </div>
+        </AppLayout>
+    )
+  }
 
   return (
     <AppLayout>
-      <div className="space-y-8">
-        <h1 className="text-3xl font-bold text-primary">Schedule an Interview</h1>
+      <div className="space-y-10">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+            <h1 className="text-3xl font-bold text-primary flex items-center mb-4 sm:mb-0">
+                <CalendarPlus className="mr-3 w-8 h-8 text-accent"/>Schedule an Interview
+            </h1>
+        </div>
 
-         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Column 1: Calendar and Peers/Topics */}
-            <div className="lg:col-span-1 space-y-6">
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Select Date</CardTitle>
-                    </CardHeader>
-                    <CardContent className="flex justify-center">
-                        <Calendar
-                            mode="single"
-                            selected={date}
-                            onSelect={setDate}
-                            className="rounded-md border"
-                            disabled={(d) => d < new Date(new Date().setHours(0, 0, 0, 0))} // Disable past dates
-                        />
-                    </CardContent>
-                </Card>
+         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+            <Card className="shadow-xl border-border hover:shadow-2xl transition-shadow lg:col-span-1">
+                <CardHeader className="border-b">
+                    <CardTitle className="text-xl font-semibold text-primary flex items-center">
+                        <span className="bg-primary text-primary-foreground rounded-full h-7 w-7 flex items-center justify-center text-sm mr-3">1</span>
+                        Select Date
+                    </CardTitle>
+                    <CardDescription>Choose the day for your mock interview.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-center p-3 sm:p-4">
+                     <Calendar
+                        mode="single"
+                        selected={date}
+                        onSelect={(newDate) => { setDate(newDate); setSelectedTime(null);}}
+                        className="rounded-md border-none shadow-none bg-transparent"
+                        disabled={(d) => d < new Date(new Date().setHours(0,0,0,0))}
+                     />
+                </CardContent>
+            </Card>
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Select Peer & Topic</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        {/* Peer Selection */}
-                        <div>
-                            <Label htmlFor="peer-select" className="flex items-center mb-1">
-                                <Users className="w-4 h-4 mr-2" />
-                                Select Peer
-                            </Label>
-                            {isLoadingPeers || isAuthLoading ? (
-                                <Skeleton className="h-10 w-full" />
-                            ) : (
-                                    <Select onValueChange={setSelectedPeer} value={selectedPeer ?? ""} disabled={peers.length === 0}>
-                                        <SelectTrigger id="peer-select">
-                                            <SelectValue placeholder={peers.length === 0 ? "No peers available" : "Choose a peer..."} />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {peers.map((peer) => (
-                                                <SelectItem key={peer.id} value={peer.id}>
-                                                    {peer.name}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                )}
-                        </div>
-                        {/* Topic Selection with Search */}
-                        <div>
-                            <Label htmlFor="topic-select" className="flex items-center mb-1">
-                                <Book className="w-4 h-4 mr-2" />
-                                Select Topic
-                            </Label>
-                            {isLoadingTopics || isAuthLoading ? (
-                                <Skeleton className="h-10 w-full" />
-                            ) : (
-                                <Select onValueChange={setSelectedTopic} value={selectedTopic ?? ""} disabled={topics.length === 0}>
-                                    <SelectTrigger id="peer-select">
-                                        <SelectValue placeholder={peers.length === 0 ? "No topics available" : "Choose a topic..."} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <div className="p-2">
-                                            <input
-                                                type="text"
-                                                placeholder="Search topics..."
-                                                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring focus:ring-primary"
-                                                onChange={(e) => {
-                                                    const searchValue = e.target.value.toLowerCase();
-                                                    setFilteredTopics(
-                                                        topics.filter((topic) =>
-                                                            topic.name.toLowerCase().includes(searchValue)
-                                                        )
-                                                    );
+            <div className="lg:col-span-2 space-y-8">
+                <Card className="shadow-xl border-border hover:shadow-2xl transition-shadow">
+                     <CardHeader className="border-b">
+                        <CardTitle className="text-xl font-semibold text-primary flex items-center">
+                             <span className="bg-primary text-primary-foreground rounded-full h-7 w-7 flex items-center justify-center text-sm mr-3">2</span>
+                             Choose Details
+                        </CardTitle>
+                         <CardDescription>Select your interview peer, topic, and desired time slot.</CardDescription>
+                     </CardHeader>
+                     <CardContent className="pt-6 space-y-6">
+                         <div className="space-y-2">
+                            <Label htmlFor="peer-search" className="flex items-center text-md font-medium text-foreground"><Users className="w-5 h-5 mr-2 text-accent"/>Select Peer</Label>
+                             <Popover open={isPeerPopoverOpen} onOpenChange={setIsPeerPopoverOpen}>
+                                <PopoverAnchor asChild>
+                                     <div className="relative">
+                                         <Input
+                                            id="peer-search"
+                                            ref={peerInputRef}
+                                            type="text"
+                                            placeholder={isLoadingInitialPeers ? "Loading peers..." : "Search by name, email, or ID..."}
+                                            value={peerSearchQuery}
+                                            onChange={handlePeerSearchChange}
+                                            onFocus={() => { if (peerSearchQuery.trim() && !selectedPeerInfo) setIsPeerPopoverOpen(true);}}
+                                            // Removed onBlur to diagnose input freeze
+                                            disabled={isLoadingInitialPeers}
+                                            className="bg-background border-input focus:border-primary focus:ring-primary text-base pr-10"
+                                            autoComplete="off"
+                                        />
+                                        {selectedPeerInfo && (
+                                            <Button 
+                                                variant="ghost" 
+                                                size="icon" 
+                                                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 text-muted-foreground hover:text-destructive"
+                                                onClick={() => {
+                                                    setSelectedPeer(null); setSelectedPeerInfo(null); setPeerSearchQuery(""); setIsPeerPopoverOpen(false); peerInputRef.current?.focus();
                                                 }}
-                                            />
-                                        </div>
-                                        {(filteredTopics.length > 0 ? filteredTopics : topics).map((topic) => (
-                                            <SelectItem key={topic.id || topic.name} value={topic.name}>
-                                                {topic.name}
-                                            </SelectItem>
+                                                title="Clear selection"
+                                            ><X className="w-4 h-4" /></Button>
+                                        )}
+                                        {!selectedPeerInfo && peerSearchQuery && (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 text-muted-foreground hover:text-destructive"
+                                                onClick={() => { setPeerSearchQuery(""); setPeerSearchResults([]); setIsPeerPopoverOpen(false); peerInputRef.current?.focus();}}
+                                                title="Clear search"
+                                            ><X className="w-4 h-4" /></Button>
+                                        )}
+                                     </div>
+                                </PopoverAnchor>
+                                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+                                    <ScrollArea className="max-h-60">
+                                        {isSearchingPeers && <div className="p-4 text-center text-sm text-muted-foreground flex items-center justify-center"><Loader2 className="w-4 h-4 mr-2 animate-spin"/> Searching...</div>}
+                                        {!isSearchingPeers && peerSearchQuery.trim() && peerSearchResults.length === 0 && !selectedPeerInfo && <div className="p-4 text-center text-sm text-muted-foreground">No peers found.</div>}
+                                        {!isSearchingPeers && peerSearchResults.map(peer => (
+                                            <div key={peer.id} className="p-3 hover:bg-accent hover:text-accent-foreground cursor-pointer text-sm transition-colors" onClick={() => handleSelectPeer(peer)}>
+                                                <p className="font-medium">{peer.name} <span className="text-muted-foreground">({peer.id})</span></p>
+                                                {peer.email && <p className="text-xs text-muted-foreground">{peer.email}</p>}
+                                            </div>
                                         ))}
-                                    </SelectContent>
-                                </Select>
+                                    </ScrollArea>
+                                </PopoverContent>
+                             </Popover>
+                             <p className="text-xs text-muted-foreground">{allPeersRef.current.length === 0 && !isLoadingInitialPeers ? "No peers available." : "Find a user to interview or be interviewed by."}</p>
+                         </div>
+
+                         <div className="space-y-2">
+                             <Label htmlFor="topic-search" className="flex items-center text-md font-medium text-foreground"><BookOpenIcon className="w-5 h-5 mr-2 text-accent"/>Select Topic</Label>
+                            {isLoadingTopics || isAuthLoading ? <Skeleton className="h-10 w-full rounded-md" /> : (
+                                <Popover open={isTopicPopoverOpen} onOpenChange={setIsTopicPopoverOpen}>
+                                    <PopoverAnchor asChild>
+                                        <div className="relative">
+                                            <Input
+                                                id="topic-search"
+                                                ref={topicInputRef}
+                                                type="text"
+                                                placeholder={allTopicsRef.current.length === 0 ? "No topics available" : "Search for a topic..."}
+                                                value={topicSearchQuery}
+                                                onChange={handleTopicSearchChange}
+                                                onFocus={() => { if (topicSearchQuery.trim() && !selectedTopicInfo) setIsTopicPopoverOpen(true); }}
+                                                // Removed onBlur to diagnose input freeze
+                                                disabled={allTopicsRef.current.length === 0}
+                                                className="bg-background border-input focus:border-primary focus:ring-primary text-base pr-10"
+                                                autoComplete="off"
+                                            />
+                                            {selectedTopicInfo && (
+                                                <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => { setSelectedTopic(null); setSelectedTopicInfo(null); setTopicSearchQuery(""); setIsTopicPopoverOpen(false); topicInputRef.current?.focus(); }} title="Clear selection"><X className="w-4 h-4" /></Button>
+                                            )}
+                                            {!selectedTopicInfo && topicSearchQuery && (
+                                                 <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => { setTopicSearchQuery(""); setTopicSearchResults([]); setIsTopicPopoverOpen(false); topicInputRef.current?.focus();}} title="Clear search"><X className="w-4 h-4" /></Button>
+                                            )}
+                                        </div>
+                                    </PopoverAnchor>
+                                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+                                        <ScrollArea className="max-h-60">
+                                            {isSearchingTopics && <div className="p-4 text-center text-sm text-muted-foreground flex items-center justify-center"><Loader2 className="w-4 h-4 mr-2 animate-spin"/> Searching...</div>}
+                                            {!isSearchingTopics && topicSearchQuery.trim() && topicSearchResults.length === 0 && !selectedTopicInfo && <div className="p-4 text-center text-sm text-muted-foreground">No topics found.</div>}
+                                            {!isSearchingTopics && topicSearchResults.map(topic => (
+                                                <div key={topic.id} className="p-3 hover:bg-accent hover:text-accent-foreground cursor-pointer text-sm transition-colors" onClick={() => handleSelectTopic(topic)}>
+                                                    <p className="font-medium">{topic.name}</p>
+                                                </div>
+                                            ))}
+                                        </ScrollArea>
+                                    </PopoverContent>
+                                </Popover>
                             )}
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
+                         </div>
 
-            {/* Column 2: Time Slots and Confirmation */}
-            <div className="lg:col-span-2 space-y-6">
-                 <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center"><Clock className="w-5 h-5 mr-2"/>Available Time Slots</CardTitle>
-                        <CardDescription>
-                            Select an available time for {date ? format(date, 'PPP') : 'the selected date'}. Times shown are in UTC.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                         {isLoadingSlots ? (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                                {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}
-                            </div>
-                         ) : date ? (
-                            availableSlots.length > 0 ? (
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                                {availableSlots.map(slot => (
-                                    <Button
-                                        key={slot.time}
-                                        variant={selectedTime === slot.time ? 'default' : slot.available ? 'outline' : 'secondary'}
-                                        onClick={() => handleTimeSelect(slot.time, slot.available)}
-                                        disabled={!slot.available}
-                                        className={`w-full ${!slot.available ? 'cursor-not-allowed opacity-50 line-through' : ''}`} // Add line-through for booked
-                                        title={!slot.available ? 'Time slot unavailable' : `Select ${slot.time} UTC`}
-                                    >
-                                        {slot.time}
-                                        {/* {!slot.available && <span className="ml-1 text-xs">(Booked)</span>} */}
-                                    </Button>
-                                ))}
-                                </div>
-                            ) : (
-                                <p className="text-muted-foreground text-center py-4">No available slots found for this date. Please select another date.</p>
-                            )
-                         ) : (
-                             <p className="text-muted-foreground text-center py-4">Please select a date to see available times.</p>
-                         )}
-                    </CardContent>
+                         <div className="space-y-2">
+                            <Label className="flex items-center text-md font-medium text-foreground"><Clock className="w-5 h-5 mr-2 text-accent"/>Available Time Slots</Label>
+                            <p className="text-xs text-muted-foreground">For {date ? format(date, 'PPP') : 'your chosen date'}. <span className="font-semibold">(Times shown in UTC)</span></p>
+                            {isLoadingSlots ? ( <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 pt-2">{[...Array(8)].map((_, i) => <Skeleton key={i} className="h-10 w-full rounded-md" />)}</div> ) 
+                            : date ? ( availableSlots.length > 0 ? ( <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 pt-2"> {availableSlots.map(slot => ( <Button key={slot.time} variant={selectedTime === slot.time ? 'default' : slot.available ? 'outline' : 'secondary'} onClick={() => handleTimeSelect(slot.time, slot.available)} disabled={!slot.available} className={`w-full transition-all duration-150 ease-in-out shadow-sm hover:shadow-md text-sm font-medium ${!slot.available ? 'cursor-not-allowed opacity-60 line-through hover:bg-secondary' : selectedTime === slot.time ? 'bg-primary text-primary-foreground ring-2 ring-primary ring-offset-1' : 'hover:bg-accent hover:text-accent-foreground'}`} title={!slot.available ? 'Booked or Past' : `Select ${slot.time} UTC`} > {slot.time} </Button> ))} </div> ) 
+                            : ( <Alert variant="default" className="bg-muted/50 mt-2"> <Info className="h-5 w-5 " /> <AlertTitle className="font-semibold">No Slots Available</AlertTitle> <AlertDescription> No time slots found for this date. Please try selecting another day. </AlertDescription> </Alert> ) ) 
+                            : ( <p className="text-muted-foreground text-center py-6">Please select a date to view available times.</p> )}
+                         </div>
+                     </CardContent>
                  </Card>
-
-                 {/* Confirmation and Submit Section */}
-                 <Card className="shadow-lg border-border hover:shadow-xl transition-shadow sticky top-24"> {/* Sticky for better UX on scroll */}
-                    <CardHeader>
-                       <CardTitle className="text-xl">4. Confirm & Schedule</CardTitle>
+                 
+                 <Card className="shadow-xl border-border hover:shadow-2xl transition-shadow">
+                    <CardHeader className="border-b">
+                       <CardTitle className="text-xl font-semibold text-primary flex items-center">
+                           <span className="bg-primary text-primary-foreground rounded-full h-7 w-7 flex items-center justify-center text-sm mr-3">3</span>
+                           Confirm & Schedule
+                        </CardTitle>
                        <CardDescription>Review your selections before confirming.</CardDescription>
                     </CardHeader>
-                     <CardContent className="space-y-3 text-sm">
-                         {date && selectedTime && selectedPeer && selectedTopic ? (
+                     <CardContent className="pt-6 space-y-3 text-sm">
+                         {date && selectedTime && selectedPeerInfo && selectedTopicInfo ? (
                              <>
-                                 <div className="font-medium"><span className="text-muted-foreground">Date:</span> {format(date, 'PPP')}</div>
-                                 <div className="font-medium"><span className="text-muted-foreground">Time (UTC):</span> {selectedTime}</div>
-                                 <div className="font-medium"><span className="text-muted-foreground">Peer:</span> {peers.find(p => p.id === selectedPeer)?.name || '...'}</div>
-                                 <div className="font-medium"><span className="text-muted-foreground">Topic:</span> {selectedTopic}</div>
-                                 <p className="text-xs text-muted-foreground pt-2 border-t mt-3">
-                                    You are scheduling as: <strong className="text-primary">{activeRole === 'interviewee' ? 'Interviewee' : 'Interviewer'}</strong>
-                                 </p>
+                                 <div className="flex justify-between"><span className="text-muted-foreground">Date:</span> <strong className="text-primary">{format(date, 'PPP')}</strong></div>
+                                 <div className="flex justify-between"><span className="text-muted-foreground">Time (UTC):</span> <strong className="text-primary">{selectedTime}</strong></div>
+                                 <div className="flex justify-between"><span className="text-muted-foreground">Peer:</span> <strong className="text-primary">{selectedPeerInfo.name}</strong></div>
+                                 <div className="flex justify-between"><span className="text-muted-foreground">Topic:</span> <strong className="text-primary">{selectedTopicInfo.name}</strong></div>
+                                 <p className="text-xs text-muted-foreground pt-3 border-t mt-4">You are scheduling as: <strong className="text-accent">{activeRole === 'interviewee' ? 'Interviewee' : 'Interviewer'}</strong></p>
                              </>
-                         ) : (
-                            <Alert variant="default" className="bg-muted/50">
-                                <Info className="h-4 w-4" />
-                                <AlertTitle className="text-sm">Awaiting Selections</AlertTitle>
-                                <AlertDescription className="text-xs">
-                                    Please complete all selections (Date, Peer, Topic, Time) to proceed.
-                                </AlertDescription>
-                            </Alert>
-                         )}
+                         ) : ( <Alert variant="default" className="bg-muted/50"> <Info className="h-4 w-4" /> <AlertTitle className="text-sm font-semibold">Awaiting Selections</AlertTitle> <AlertDescription className="text-xs"> Please complete all selections (Date, Peer, Topic, Time) to proceed. </AlertDescription> </Alert> )}
                     </CardContent>
                     <CardFooter>
                         <Button onClick={handleSubmit} disabled={!canSubmit} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground py-3 text-base font-semibold rounded-lg shadow-md hover:shadow-lg transition-all">

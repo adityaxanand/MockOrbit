@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mockorbit-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mockorbit
+  template:
+    metadata:
+      labels:
+        app: mockorbit
+    spec:
+      containers:
+      - name: backend
+        image: adityaxanand/mockorbit-backend:latest
+        ports:
+        - containerPort: 8080
