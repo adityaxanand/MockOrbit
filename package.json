@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@emailjs/browser": "^4.4.1",
     "@genkit-ai/googleai": "^1.6.2",
     "@genkit-ai/next": "^1.6.2",
     "@headlessui/react": "^2.2.3",
@@ -43,6 +44,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
     "editor": "^1.0.0",
+    "emailjs-com": "^3.2.0",
     "firebase": "^11.3.0",
     "genkit": "^1.6.2",
     "lodash.debounce": "^4.0.8",
