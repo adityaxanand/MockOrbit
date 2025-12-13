@@ -1,18 +1,37 @@
-
 "use client";
 
 import { useState, useEffect } from "react";
 import AppLayout from "@/components/shared/AppLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CalendarDays, History, BookOpen, Lightbulb, Loader2, UserCheck, ExternalLink, Info } from "lucide-react";
+import { 
+  CalendarDays, 
+  History, 
+  BookOpen, 
+  Lightbulb, 
+  UserCheck, 
+  ExternalLink, 
+  Info, 
+  Activity, 
+  Clock, 
+  Target,
+  ChevronRight,
+  Rocket,
+  Video
+} from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge"; // Added Badge component
+import { Badge } from "@/components/ui/badge";
+import { motion, AnimatePresence } from "framer-motion";
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
 
+// --- UTILITIES ---
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
 
@@ -26,6 +45,51 @@ interface Interview {
   status?: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
 }
 
+// --- VISUAL COMPONENTS ---
+
+const Starfield = () => {
+  return (
+    <div className="fixed inset-0 z-0 pointer-events-none">
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-violet-900/20 via-[#02040a] to-[#02040a]" />
+      <div className="absolute inset-0 opacity-20" style={{ 
+        backgroundImage: 'radial-gradient(white 1px, transparent 1px)', 
+        backgroundSize: '50px 50px' 
+      }} />
+    </div>
+  );
+};
+
+const BorderBeam = ({ className }: { className?: string }) => (
+  <div className={cn("pointer-events-none absolute inset-0 rounded-[inherit] border border-transparent [mask-clip:padding-box,border-box] [mask-composite:intersect] [mask-image:linear-gradient(transparent,transparent),linear-gradient(#000,#000)]", className)}>
+    <motion.div
+      animate={{ rotate: 360 }}
+      transition={{ duration: 8, ease: "linear", repeat: Infinity }}
+      className="absolute aspect-square w-full bg-[conic-gradient(from_0deg,transparent_0_340deg,white_360deg)] opacity-20"
+      style={{ offsetPath: "rect(0% 100% 100% 0% round 1.5rem)", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}
+    />
+  </div>
+);
+
+const StatCard = ({ icon: Icon, label, value, color, delay }: any) => (
+  <motion.div 
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ delay }}
+    className="relative group overflow-hidden bg-[#0A0A0A] border border-white/10 p-5 rounded-2xl"
+  >
+    <div className={cn("absolute top-0 right-0 w-24 h-24 bg-gradient-to-br opacity-10 rounded-bl-full transition-opacity group-hover:opacity-20", color)} />
+    <div className="relative z-10 flex items-center gap-4">
+      <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center bg-white/5 border border-white/5 group-hover:scale-110 transition-transform", color.replace("bg-", "text-").replace("from-", "text-"))}>
+        <Icon className="w-6 h-6" />
+      </div>
+      <div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">{label}</p>
+        <p className="text-2xl font-bold text-white">{value}</p>
+      </div>
+    </div>
+  </motion.div>
+);
+
 export default function IntervieweeDashboardPage() {
   const { user, token, isLoading: isAuthLoading, activeRole } = useAuth();
   const { toast } = useToast();
@@ -34,13 +98,7 @@ export default function IntervieweeDashboardPage() {
   const [isLoadingUpcoming, setIsLoadingUpcoming] = useState(true);
   const [isLoadingPast, setIsLoadingPast] = useState(true);
 
-   useEffect(() => {
-        if (!isAuthLoading && activeRole && activeRole !== 'interviewee') {
-             // This redirect is now primarily handled by AuthProvider, but it's a good safeguard.
-            // router.push(`/dashboard/${activeRole}`);
-        }
-    }, [isAuthLoading, activeRole]);
-
+  // Fetch Data Logic
   useEffect(() => {
     const fetchUpcoming = async () => {
       if (!user?.id || !token || activeRole !== 'interviewee') {
@@ -49,206 +107,547 @@ export default function IntervieweeDashboardPage() {
       }
       setIsLoadingUpcoming(true);
       try {
-        const response = await fetch(`${API_URL}/users/${user.id}/interviews?role=interviewee&status=scheduled,in_progress`, { // Also fetch in_progress
+        const response = await fetch(`${API_URL}/users/${user.id}/interviews?role=interviewee&status=scheduled,in_progress`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Failed to fetch upcoming interviews');
         setUpcomingInterviews(data || []);
       } catch (error: any) {
-        console.error("Failed to fetch upcoming interviews:", error);
-        toast({ title: "Error", description: `Could not load upcoming interviews: ${error.message}`, variant: "destructive" });
-        setUpcomingInterviews([]);
+        toast({ title: "Sync Error", description: "Could not establish uplink to upcoming missions.", variant: "destructive" });
       } finally {
         setIsLoadingUpcoming(false);
       }
     };
-    if (!isAuthLoading) fetchUpcoming();
+
+    const fetchPast = async () => {
+      if (!user?.id || !token || activeRole !== 'interviewee') {
+          setIsLoadingPast(false);
+          return;
+      }
+      setIsLoadingPast(true);
+      try {
+        const response = await fetch(`${API_URL}/users/${user.id}/interviews?role=interviewee&status=completed,cancelled`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to fetch past interviews');
+        setPastInterviews(data || []);
+      } catch (error: any) {
+        toast({ title: "Sync Error", description: "Could not retrieve mission archives.", variant: "destructive" });
+      } finally {
+        setIsLoadingPast(false);
+      }
+    };
+
+    if (!isAuthLoading) {
+      fetchUpcoming();
+      fetchPast();
+    }
   }, [user?.id, token, toast, isAuthLoading, activeRole]);
 
-  useEffect(() => {
-     const fetchPast = async () => {
-       if (!user?.id || !token || activeRole !== 'interviewee') {
-           setIsLoadingPast(false);
-           return;
-       }
-       setIsLoadingPast(true);
-       try {
-         const response = await fetch(`${API_URL}/users/${user.id}/interviews?role=interviewee&status=completed,cancelled`, {
-           headers: { Authorization: `Bearer ${token}` },
-         });
-         const data = await response.json();
-         if (!response.ok) throw new Error(data.error || 'Failed to fetch past interviews');
-         setPastInterviews(data || []);
-       } catch (error: any) {
-         console.error("Failed to fetch past interviews:", error);
-         toast({ title: "Error", description: `Could not load past interviews: ${error.message}`, variant: "destructive" });
-         setPastInterviews([]);
-       } finally {
-         setIsLoadingPast(false);
-       }
-     };
-     if (!isAuthLoading) fetchPast();
-   }, [user?.id, token, toast, isAuthLoading, activeRole]);
+  const formatDate = (isoString: string) => {
+    return new Date(isoString).toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+  };
 
-   const formatDate = (isoString: string, style: 'medium' | 'short' = 'medium'): string => {
-       try {
-           const dateOptions: Intl.DateTimeFormatOptions = { dateStyle: style };
-           if (style === 'medium') {
-               dateOptions.timeStyle = 'short';
-           }
-           return new Intl.DateTimeFormat(undefined, dateOptions).format(new Date(isoString));
-       } catch (e) { return "Invalid Date"; }
-   };
-
-   const getFeedbackBadgeVariant = (status?: string): "default" | "secondary" | "destructive" | "outline" => {
+  const getStatusColor = (status: string) => {
     switch (status) {
-        case 'Received': return 'default'; // Primary color for received
-        case 'Pending': return 'secondary'; // Muted for pending
-        case 'N/A':
-        case 'Cancelled': return 'outline'; // Outline for N/A or Cancelled
-        default: return 'outline';
+      case 'in_progress': return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+      case 'scheduled': return "bg-blue-500/10 text-blue-400 border-blue-500/20";
+      case 'completed': return "bg-gray-500/10 text-gray-400 border-gray-500/20";
+      default: return "bg-gray-500/10 text-gray-400 border-gray-500/20";
     }
-   };
-
-   const renderLoadingSkeletons = (count: number, type: 'upcoming' | 'history') => (
-    <div className="space-y-4">
-        {[...Array(count)].map((_, index) => (
-             type === 'upcoming' ? (
-                 <Card key={index} className="p-4 border rounded-lg shadow-sm">
-                     <div className="flex flex-col sm:flex-row sm:items-center justify-between">
-                        <div className="mb-2 sm:mb-0 space-y-2">
-                            <Skeleton className="h-5 w-48" />
-                            <Skeleton className="h-4 w-32" />
-                            <Skeleton className="h-4 w-40" />
-                        </div>
-                        <Skeleton className="h-10 w-24 rounded-md" />
-                     </div>
-                 </Card>
-             ) : (
-                 <div key={index} className="flex items-center justify-between text-sm py-3 border-b">
-                     <div className="space-y-1.5">
-                        <Skeleton className="h-4 w-40" />
-                        <Skeleton className="h-3 w-28" />
-                     </div>
-                     <Skeleton className="h-6 w-20 rounded-full" />
-                  </div>
-             )
-        ))}
-    </div>
-   );
+  };
 
   return (
     <AppLayout>
-      <div className="space-y-8">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <h1 className="text-3xl font-bold text-primary">Interviewee Dashboard</h1>
-            <Link href="/schedule" passHref>
-                 <Button className="bg-accent text-accent-foreground hover:bg-accent/90 shadow-md hover:shadow-lg transition-shadow">
-                    <CalendarDays className="mr-2 h-5 w-5"/> Schedule New Interview
-                 </Button>
+      <div className="relative min-h-screen pb-20">
+        <Starfield />
+        
+        {/* Header Section */}
+        <div className="relative z-10 space-y-8">
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4"
+          >
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                 <Badge variant="outline" className="border-violet-500/50 text-violet-400 bg-violet-500/10 px-3 py-1">
+                    INTERVIEWEE MODE
+                 </Badge>
+              </div>
+              <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight">
+                Mission Control
+              </h1>
+              <p className="text-gray-400 mt-2 text-lg">
+                Welcome back, Commander {user?.name?.split(' ')[0] || 'User'}. Ready for your next deployment?
+              </p>
+            </div>
+            
+            <Link href="/schedule">
+              <Button className="bg-white text-black hover:bg-gray-200 font-bold px-6 py-6 rounded-xl shadow-[0_0_20px_-5px_rgba(255,255,255,0.4)] transition-all hover:scale-105">
+                <Rocket className="mr-2 h-5 w-5" /> Schedule New Mission
+              </Button>
             </Link>
-        </div>
+          </motion.div>
 
-        <Card className="shadow-lg border-border hover:shadow-xl transition-shadow">
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center text-xl"><UserCheck className="mr-3 h-6 w-6 text-primary"/>Upcoming Interviews</CardTitle>
-            <CardDescription>Your scheduled practice interviews. Join the room when it's time!</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoadingUpcoming ? renderLoadingSkeletons(2, 'upcoming')
-             : upcomingInterviews.length > 0 ? (
-              <ul className="space-y-4">
-                {upcomingInterviews.map((interview) => (
-                  <Card key={interview.id} className="p-4 border rounded-lg hover:bg-secondary/50 transition-colors shadow-sm">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between">
-                        <div className="mb-3 sm:mb-0">
-                          <p className="font-semibold text-lg text-primary">{interview.topic}</p>
-                          <p className="text-sm text-muted-foreground">With: {interview.interviewer?.name || 'N/A'}</p>
-                           <div className="flex items-center text-sm text-muted-foreground mt-1">
-                             <CalendarDays className="w-4 h-4 mr-1.5" />
-                             <span>{formatDate(interview.scheduled_time)}</span>
-                          </div>
-                        </div>
-                         <Link href={`/interview-room/${interview.id}`} passHref>
-                             <Button size="sm" className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm hover:shadow-md transition-shadow w-full sm:w-auto" disabled={interview.status !== 'scheduled' && interview.status !== 'in_progress'}>
-                                 {interview.status === 'in_progress' ? 'Rejoin Room' : 'Join Room'}
-                                 <ExternalLink className="ml-2 h-4 w-4"/>
-                             </Button>
-                         </Link>
-                    </div>
-                    {interview.status === 'in_progress' && <Badge variant="default" className="mt-2 inline-block bg-green-500 text-white">In Progress</Badge>}
-                  </Card>
-                ))}
-              </ul>
-            ) : (
-              <Alert className="bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-700">
-                <Info className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                <AlertTitle className="text-blue-700 dark:text-blue-300">No Upcoming Interviews</AlertTitle>
-                <AlertDescription className="text-blue-600 dark:text-blue-400">
-                  You don&apos;t have any interviews scheduled yet. Click &quot;Schedule New Interview&quot; to get started!
-                </AlertDescription>
-              </Alert>
-            )}
-          </CardContent>
-        </Card>
+          {/* Stats Row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+             <StatCard 
+                icon={Target} 
+                label="Total Missions" 
+                value={pastInterviews.length + upcomingInterviews.length} 
+                color="from-blue-500 to-cyan-500" 
+                delay={0.1}
+             />
+             <StatCard 
+                icon={Activity} 
+                label="Active Status" 
+                value={upcomingInterviews.length > 0 ? "On Standby" : "Idle"} 
+                color="from-emerald-500 to-green-500" 
+                delay={0.2}
+             />
+             <StatCard 
+                icon={Clock} 
+                label="Next Launch" 
+                value={upcomingInterviews.length > 0 ? "Upcoming" : "No Data"} 
+                color="from-violet-500 to-purple-500" 
+                delay={0.3}
+             />
+          </div>
 
-        <div className="grid gap-8 md:grid-cols-2">
-            <Card className="shadow-lg border-border hover:shadow-xl transition-shadow">
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center text-xl"><History className="mr-3 h-6 w-6 text-primary"/>Interview History</CardTitle>
-                 <CardDescription>Review your past interviews and feedback status.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {isLoadingPast ? renderLoadingSkeletons(3, 'history')
-                 : pastInterviews.length > 0 ? (
-                  <ul className="space-y-1 divide-y divide-border">
-                    {pastInterviews.map((interview) => (
-                      <li key={interview.id} className="flex items-center justify-between py-3">
-                        <div>
-                           <p className="font-medium">{interview.topic}</p>
-                           <p className="text-xs text-muted-foreground">vs {interview.interviewer?.name || 'N/A'} on {formatDate(interview.scheduled_time, 'short')}</p>
-                        </div>
-                        <Badge variant={getFeedbackBadgeVariant(interview.status === 'cancelled' ? 'Cancelled' : interview.feedback_status)}>
-                             {interview.status === 'cancelled' ? 'Cancelled' : interview.feedback_status || 'N/A'}
-                        </Badge>
-                      </li>
-                    ))}
-                  </ul>
+          <div className="grid lg:grid-cols-12 gap-8">
+             {/* --- Left Col: Upcoming (Main Focus) --- */}
+             <div className="lg:col-span-8 space-y-6">
+                <div className="flex items-center justify-between">
+                   <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                      <CalendarDays className="w-6 h-6 text-violet-400" /> Upcoming Deployments
+                   </h2>
+                </div>
+
+                {isLoadingUpcoming ? (
+                   <div className="space-y-4">
+                      {[1, 2].map(i => <Skeleton key={i} className="h-40 w-full rounded-2xl bg-white/5" />)}
+                   </div>
+                ) : upcomingInterviews.length > 0 ? (
+                   <div className="space-y-4">
+                      {upcomingInterviews.map((interview, i) => (
+                         <motion.div
+                           key={interview.id}
+                           initial={{ opacity: 0, x: -20 }}
+                           animate={{ opacity: 1, x: 0 }}
+                           transition={{ delay: i * 0.1 }}
+                           className="group relative bg-[#0A0A0A] border border-white/10 rounded-2xl p-6 hover:border-violet-500/50 transition-all duration-300"
+                         >
+                            {interview.status === 'in_progress' && <BorderBeam />}
+                            
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative z-10">
+                               <div className="space-y-2">
+                                  <div className="flex items-center gap-3">
+                                     <span className={cn("px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border", getStatusColor(interview.status || 'scheduled'))}>
+                                        {interview.status === 'in_progress' ? 'Live Now' : 'Scheduled'}
+                                     </span>
+                                     <span className="text-xs text-gray-500 font-mono">ID: {interview.id.slice(-6).toUpperCase()}</span>
+                                  </div>
+                                  <h3 className="text-xl font-bold text-white group-hover:text-violet-200 transition-colors">
+                                     {interview.topic}
+                                  </h3>
+                                  <div className="flex items-center gap-4 text-sm text-gray-400">
+                                     <div className="flex items-center gap-1.5">
+                                        <UserCheck className="w-4 h-4 text-gray-500" />
+                                        <span>vs {interview.interviewer?.name || 'Unknown'}</span>
+                                     </div>
+                                     <div className="flex items-center gap-1.5">
+                                        <Clock className="w-4 h-4 text-gray-500" />
+                                        <span>{formatDate(interview.scheduled_time)}</span>
+                                     </div>
+                                  </div>
+                               </div>
+
+                               <Link href={`/interview-room/${interview.id}`}>
+                                  <Button 
+                                    size="lg" 
+                                    className={cn(
+                                       "font-bold shadow-lg transition-all min-w-[140px]",
+                                       interview.status === 'in_progress' 
+                                          ? "bg-emerald-600 hover:bg-emerald-500 animate-pulse" 
+                                          : "bg-white/10 hover:bg-white/20 text-white"
+                                    )}
+                                    disabled={interview.status !== 'scheduled' && interview.status !== 'in_progress'}
+                                  >
+                                     {interview.status === 'in_progress' ? (
+                                        <><Video className="mr-2 h-4 w-4" /> Rejoin</>
+                                     ) : (
+                                        <><ExternalLink className="mr-2 h-4 w-4" /> Initialize</>
+                                     )}
+                                  </Button>
+                               </Link>
+                            </div>
+                         </motion.div>
+                      ))}
+                   </div>
                 ) : (
-                  <p className="text-muted-foreground text-sm text-center py-3">No past interview history found.</p>
+                   <motion.div 
+                     initial={{ opacity: 0 }} 
+                     animate={{ opacity: 1 }}
+                     className="bg-[#0A0A0A]/50 border border-dashed border-white/10 rounded-2xl p-12 text-center"
+                   >
+                      <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+                         <CalendarDays className="w-8 h-8 text-gray-600" />
+                      </div>
+                      <h3 className="text-lg font-bold text-white">No Missions Scheduled</h3>
+                      <p className="text-gray-400 mb-6">Your schedule is clear, commander. Time to train.</p>
+                      <Link href="/schedule">
+                         <Button variant="outline" className="border-violet-500/50 text-violet-400 hover:bg-violet-500/10">
+                            Schedule Now
+                         </Button>
+                      </Link>
+                   </motion.div>
                 )}
-              </CardContent>
-              <CardFooter>
-                <Link href="/profile#history" passHref className="w-full">
-                     <Button variant="outline" size="sm" className="w-full">View Full Profile History</Button>
-                </Link>
-              </CardFooter>
-            </Card>
+             </div>
 
-             <Card className="shadow-lg border-border hover:shadow-xl transition-shadow">
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center text-xl"><BookOpen className="mr-3 h-6 w-6 text-primary"/>Preparation Tools</CardTitle>
-                 <CardDescription>Utilize these resources to sharpen your interview skills.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                 <Link href="/question-generator" className="block p-4 border rounded-lg hover:bg-secondary/50 hover:border-primary transition-all shadow-sm hover:shadow-md">
-                    <div className="flex items-start gap-3">
-                        <Lightbulb className="w-6 h-6 text-accent mt-1"/>
-                        <div>
-                            <p className="font-medium">AI Question Generator</p>
-                            <p className="text-sm text-muted-foreground">Practice with AI-generated questions tailored to your needs.</p>
-                        </div>
-                    </div>
-                 </Link>
-                 {/* Add other resource links here if available */}
-              </CardContent>
-            </Card>
+             {/* --- Right Col: History & Resources --- */}
+             <div className="lg:col-span-4 space-y-6">
+                
+                {/* History Card */}
+                <Card className="bg-[#0A0A0A] border-white/10 overflow-hidden shadow-xl">
+                   <CardHeader className="bg-white/5 border-b border-white/5 py-4">
+                      <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+                         <History className="w-4 h-4 text-violet-400" /> Mission Logs
+                      </CardTitle>
+                   </CardHeader>
+                   <CardContent className="p-0">
+                      {isLoadingPast ? (
+                         <div className="p-4 space-y-3">
+                            {[1,2,3].map(i => <Skeleton key={i} className="h-12 w-full bg-white/5 rounded-lg" />)}
+                         </div>
+                      ) : pastInterviews.length > 0 ? (
+                         <div className="divide-y divide-white/5">
+                            {pastInterviews.slice(0, 5).map((item) => (
+                               <div key={item.id} className="p-4 hover:bg-white/5 transition-colors flex justify-between items-center group">
+                                  <div>
+                                     <p className="text-sm font-medium text-white group-hover:text-violet-300 transition-colors">{item.topic}</p>
+                                     <p className="text-xs text-gray-500">{new Date(item.scheduled_time).toLocaleDateString()}</p>
+                                  </div>
+                                  <Badge variant="outline" className={cn(
+                                     "text-[10px] uppercase",
+                                     item.status === 'completed' ? "border-emerald-500/30 text-emerald-400" : "border-red-500/30 text-red-400"
+                                  )}>
+                                     {item.status}
+                                  </Badge>
+                               </div>
+                            ))}
+                         </div>
+                      ) : (
+                         <div className="p-8 text-center text-gray-500 text-sm">No archives found.</div>
+                      )}
+                   </CardContent>
+                   <CardFooter className="p-3 bg-white/5 border-t border-white/5">
+                      <Link href="/dashboard/profile" className="w-full">
+                         <Button variant="ghost" size="sm" className="w-full text-xs text-gray-400 hover:text-white">View All Logs</Button>
+                      </Link>
+                   </CardFooter>
+                </Card>
+
+                {/* Training Tools Card */}
+                <Card className="bg-gradient-to-br from-violet-900/20 to-[#0A0A0A] border-violet-500/20 overflow-hidden relative">
+                   <div className="absolute top-0 right-0 p-32 bg-violet-600/10 blur-[50px] rounded-full pointer-events-none" />
+                   <CardHeader>
+                      <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+                         <BookOpen className="w-4 h-4 text-pink-400" /> Training Deck
+                      </CardTitle>
+                   </CardHeader>
+                   <CardContent className="space-y-3 relative z-10">
+                      <Link href="/question-generator">
+                         <div className="group p-3 rounded-xl bg-white/5 border border-white/5 hover:border-violet-500/50 hover:bg-white/10 transition-all cursor-pointer flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-black flex items-center justify-center border border-white/10 group-hover:border-violet-500/50 transition-colors">
+                               <Lightbulb className="w-5 h-5 text-yellow-400" />
+                            </div>
+                            <div>
+                               <p className="text-sm font-bold text-white group-hover:text-violet-300">AI Question Generator</p>
+                               <p className="text-xs text-gray-400">Generate custom problems.</p>
+                            </div>
+                         </div>
+                      </Link>
+                      {/* Add more tools here */}
+                   </CardContent>
+                </Card>
+             </div>
+          </div>
         </div>
       </div>
     </AppLayout>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+// "use client";
+
+// import { useState, useEffect } from "react";
+// import AppLayout from "@/components/shared/AppLayout";
+// import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+// import { Button } from "@/components/ui/button";
+// import { CalendarDays, History, BookOpen, Lightbulb, Loader2, UserCheck, ExternalLink, Info } from "lucide-react";
+// import Link from "next/link";
+// import { useAuth } from "@/providers/AuthProvider";
+// import { useToast } from "@/hooks/use-toast";
+// import { Skeleton } from "@/components/ui/skeleton";
+// import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+// import { Badge } from "@/components/ui/badge"; // Added Badge component
+
+
+// const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
+
+// interface Interview {
+//   id: string;
+//   interviewer?: { id: string; name: string; };
+//   interviewee?: { id: string; name: string; };
+//   scheduled_time: string;
+//   topic: string;
+//   feedback_status?: 'Received' | 'Pending' | 'Provided' | 'N/A';
+//   status?: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+// }
+
+// export default function IntervieweeDashboardPage() {
+//   const { user, token, isLoading: isAuthLoading, activeRole } = useAuth();
+//   const { toast } = useToast();
+//   const [upcomingInterviews, setUpcomingInterviews] = useState<Interview[]>([]);
+//   const [pastInterviews, setPastInterviews] = useState<Interview[]>([]);
+//   const [isLoadingUpcoming, setIsLoadingUpcoming] = useState(true);
+//   const [isLoadingPast, setIsLoadingPast] = useState(true);
+
+//    useEffect(() => {
+//         if (!isAuthLoading && activeRole && activeRole !== 'interviewee') {
+//              // This redirect is now primarily handled by AuthProvider, but it's a good safeguard.
+//             // router.push(`/dashboard/${activeRole}`);
+//         }
+//     }, [isAuthLoading, activeRole]);
+
+//   useEffect(() => {
+//     const fetchUpcoming = async () => {
+//       if (!user?.id || !token || activeRole !== 'interviewee') {
+//           setIsLoadingUpcoming(false);
+//           return;
+//       }
+//       setIsLoadingUpcoming(true);
+//       try {
+//         const response = await fetch(`${API_URL}/users/${user.id}/interviews?role=interviewee&status=scheduled,in_progress`, { // Also fetch in_progress
+//           headers: { Authorization: `Bearer ${token}` },
+//         });
+//         const data = await response.json();
+//         if (!response.ok) throw new Error(data.error || 'Failed to fetch upcoming interviews');
+//         setUpcomingInterviews(data || []);
+//       } catch (error: any) {
+//         console.error("Failed to fetch upcoming interviews:", error);
+//         toast({ title: "Error", description: `Could not load upcoming interviews: ${error.message}`, variant: "destructive" });
+//         setUpcomingInterviews([]);
+//       } finally {
+//         setIsLoadingUpcoming(false);
+//       }
+//     };
+//     if (!isAuthLoading) fetchUpcoming();
+//   }, [user?.id, token, toast, isAuthLoading, activeRole]);
+
+//   useEffect(() => {
+//      const fetchPast = async () => {
+//        if (!user?.id || !token || activeRole !== 'interviewee') {
+//            setIsLoadingPast(false);
+//            return;
+//        }
+//        setIsLoadingPast(true);
+//        try {
+//          const response = await fetch(`${API_URL}/users/${user.id}/interviews?role=interviewee&status=completed,cancelled`, {
+//            headers: { Authorization: `Bearer ${token}` },
+//          });
+//          const data = await response.json();
+//          if (!response.ok) throw new Error(data.error || 'Failed to fetch past interviews');
+//          setPastInterviews(data || []);
+//        } catch (error: any) {
+//          console.error("Failed to fetch past interviews:", error);
+//          toast({ title: "Error", description: `Could not load past interviews: ${error.message}`, variant: "destructive" });
+//          setPastInterviews([]);
+//        } finally {
+//          setIsLoadingPast(false);
+//        }
+//      };
+//      if (!isAuthLoading) fetchPast();
+//    }, [user?.id, token, toast, isAuthLoading, activeRole]);
+
+//    const formatDate = (isoString: string, style: 'medium' | 'short' = 'medium'): string => {
+//        try {
+//            const dateOptions: Intl.DateTimeFormatOptions = { dateStyle: style };
+//            if (style === 'medium') {
+//                dateOptions.timeStyle = 'short';
+//            }
+//            return new Intl.DateTimeFormat(undefined, dateOptions).format(new Date(isoString));
+//        } catch (e) { return "Invalid Date"; }
+//    };
+
+//    const getFeedbackBadgeVariant = (status?: string): "default" | "secondary" | "destructive" | "outline" => {
+//     switch (status) {
+//         case 'Received': return 'default'; // Primary color for received
+//         case 'Pending': return 'secondary'; // Muted for pending
+//         case 'N/A':
+//         case 'Cancelled': return 'outline'; // Outline for N/A or Cancelled
+//         default: return 'outline';
+//     }
+//    };
+
+//    const renderLoadingSkeletons = (count: number, type: 'upcoming' | 'history') => (
+//     <div className="space-y-4">
+//         {[...Array(count)].map((_, index) => (
+//              type === 'upcoming' ? (
+//                  <Card key={index} className="p-4 border rounded-lg shadow-sm">
+//                      <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+//                         <div className="mb-2 sm:mb-0 space-y-2">
+//                             <Skeleton className="h-5 w-48" />
+//                             <Skeleton className="h-4 w-32" />
+//                             <Skeleton className="h-4 w-40" />
+//                         </div>
+//                         <Skeleton className="h-10 w-24 rounded-md" />
+//                      </div>
+//                  </Card>
+//              ) : (
+//                  <div key={index} className="flex items-center justify-between text-sm py-3 border-b">
+//                      <div className="space-y-1.5">
+//                         <Skeleton className="h-4 w-40" />
+//                         <Skeleton className="h-3 w-28" />
+//                      </div>
+//                      <Skeleton className="h-6 w-20 rounded-full" />
+//                   </div>
+//              )
+//         ))}
+//     </div>
+//    );
+
+//   return (
+//     <AppLayout>
+//       <div className="space-y-8">
+//         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+//             <h1 className="text-3xl font-bold text-primary">Interviewee Dashboard</h1>
+//             <Link href="/schedule" passHref>
+//                  <Button className="bg-accent text-accent-foreground hover:bg-accent/90 shadow-md hover:shadow-lg transition-shadow">
+//                     <CalendarDays className="mr-2 h-5 w-5"/> Schedule New Interview
+//                  </Button>
+//             </Link>
+//         </div>
+
+//         <Card className="shadow-lg border-border hover:shadow-xl transition-shadow">
+//           <CardHeader className="pb-4">
+//             <CardTitle className="flex items-center text-xl"><UserCheck className="mr-3 h-6 w-6 text-primary"/>Upcoming Interviews</CardTitle>
+//             <CardDescription>Your scheduled practice interviews. Join the room when it's time!</CardDescription>
+//           </CardHeader>
+//           <CardContent>
+//             {isLoadingUpcoming ? renderLoadingSkeletons(2, 'upcoming')
+//              : upcomingInterviews.length > 0 ? (
+//               <ul className="space-y-4">
+//                 {upcomingInterviews.map((interview) => (
+//                   <Card key={interview.id} className="p-4 border rounded-lg hover:bg-secondary/50 transition-colors shadow-sm">
+//                     <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+//                         <div className="mb-3 sm:mb-0">
+//                           <p className="font-semibold text-lg text-primary">{interview.topic}</p>
+//                           <p className="text-sm text-muted-foreground">With: {interview.interviewer?.name || 'N/A'}</p>
+//                            <div className="flex items-center text-sm text-muted-foreground mt-1">
+//                              <CalendarDays className="w-4 h-4 mr-1.5" />
+//                              <span>{formatDate(interview.scheduled_time)}</span>
+//                           </div>
+//                         </div>
+//                          <Link href={`/interview-room/${interview.id}`} passHref>
+//                              <Button size="sm" className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm hover:shadow-md transition-shadow w-full sm:w-auto" disabled={interview.status !== 'scheduled' && interview.status !== 'in_progress'}>
+//                                  {interview.status === 'in_progress' ? 'Rejoin Room' : 'Join Room'}
+//                                  <ExternalLink className="ml-2 h-4 w-4"/>
+//                              </Button>
+//                          </Link>
+//                     </div>
+//                     {interview.status === 'in_progress' && <Badge variant="default" className="mt-2 inline-block bg-green-500 text-white">In Progress</Badge>}
+//                   </Card>
+//                 ))}
+//               </ul>
+//             ) : (
+//               <Alert className="bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-700">
+//                 <Info className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+//                 <AlertTitle className="text-blue-700 dark:text-blue-300">No Upcoming Interviews</AlertTitle>
+//                 <AlertDescription className="text-blue-600 dark:text-blue-400">
+//                   You don&apos;t have any interviews scheduled yet. Click &quot;Schedule New Interview&quot; to get started!
+//                 </AlertDescription>
+//               </Alert>
+//             )}
+//           </CardContent>
+//         </Card>
+
+//         <div className="grid gap-8 md:grid-cols-2">
+//             <Card className="shadow-lg border-border hover:shadow-xl transition-shadow">
+//               <CardHeader className="pb-4">
+//                 <CardTitle className="flex items-center text-xl"><History className="mr-3 h-6 w-6 text-primary"/>Interview History</CardTitle>
+//                  <CardDescription>Review your past interviews and feedback status.</CardDescription>
+//               </CardHeader>
+//               <CardContent>
+//                 {isLoadingPast ? renderLoadingSkeletons(3, 'history')
+//                  : pastInterviews.length > 0 ? (
+//                   <ul className="space-y-1 divide-y divide-border">
+//                     {pastInterviews.map((interview) => (
+//                       <li key={interview.id} className="flex items-center justify-between py-3">
+//                         <div>
+//                            <p className="font-medium">{interview.topic}</p>
+//                            <p className="text-xs text-muted-foreground">vs {interview.interviewer?.name || 'N/A'} on {formatDate(interview.scheduled_time, 'short')}</p>
+//                         </div>
+//                         <Badge variant={getFeedbackBadgeVariant(interview.status === 'cancelled' ? 'Cancelled' : interview.feedback_status)}>
+//                              {interview.status === 'cancelled' ? 'Cancelled' : interview.feedback_status || 'N/A'}
+//                         </Badge>
+//                       </li>
+//                     ))}
+//                   </ul>
+//                 ) : (
+//                   <p className="text-muted-foreground text-sm text-center py-3">No past interview history found.</p>
+//                 )}
+//               </CardContent>
+//               <CardFooter>
+//                 <Link href="/profile#history" passHref className="w-full">
+//                      <Button variant="outline" size="sm" className="w-full">View Full Profile History</Button>
+//                 </Link>
+//               </CardFooter>
+//             </Card>
+
+//              <Card className="shadow-lg border-border hover:shadow-xl transition-shadow">
+//               <CardHeader className="pb-4">
+//                 <CardTitle className="flex items-center text-xl"><BookOpen className="mr-3 h-6 w-6 text-primary"/>Preparation Tools</CardTitle>
+//                  <CardDescription>Utilize these resources to sharpen your interview skills.</CardDescription>
+//               </CardHeader>
+//               <CardContent className="space-y-4">
+//                  <Link href="/question-generator" className="block p-4 border rounded-lg hover:bg-secondary/50 hover:border-primary transition-all shadow-sm hover:shadow-md">
+//                     <div className="flex items-start gap-3">
+//                         <Lightbulb className="w-6 h-6 text-accent mt-1"/>
+//                         <div>
+//                             <p className="font-medium">AI Question Generator</p>
+//                             <p className="text-sm text-muted-foreground">Practice with AI-generated questions tailored to your needs.</p>
+//                         </div>
+//                     </div>
+//                  </Link>
+//                  {/* Add other resource links here if available */}
+//               </CardContent>
+//             </Card>
+//         </div>
+//       </div>
+//     </AppLayout>
+//   );
+// }
 
 
 

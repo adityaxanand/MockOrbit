@@ -47,7 +47,7 @@
     "editor": "^1.0.0",
     "emailjs-com": "^3.2.0",
     "firebase": "^11.3.0",
-    "framer-motion": "^12.18.1",
+    "framer-motion": "^12.23.26",
     "genkit": "^1.6.2",
     "lodash.debounce": "^4.0.8",
     "lucide-react": "^0.475.0",
@@ -63,7 +63,7 @@
     "react-icons": "^5.5.0",
     "recharts": "^2.15.1",
     "simple-peer": "^9.11.1",
-    "tailwind-merge": "^3.3.1",
+    "tailwind-merge": "^3.4.0",
     "tailwindcss-animate": "^1.0.7",
     "three": "^0.178.0",
     "zod": "^3.24.2"

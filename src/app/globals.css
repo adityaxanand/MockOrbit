@@ -4,100 +4,146 @@
 
 @layer base {
   :root {
-    /* Golden Black Theme */
-    --background: 210 7% 10%; /* #16181A Deep, dark charcoal */
-    --foreground: 216 20% 95%; /* #F0F2F5 Crisp off-white */
-    
-    --card: 210 6% 13%; /* #1F2123 Slightly lighter for cards */
-    --card-foreground: 216 20% 95%; /* #F0F2F5 Text on cards */
-    
-    --popover: 210 6% 11%; /* #1A1D1F Darker for popovers, distinct from card */
-    --popover-foreground: 216 20% 95%; /* #F0F2F5 Text on popovers */
-    
-    --primary: 40 45% 58%; /* #C9A461 Muted Gold/Amber */
-    --primary-foreground: 210 7% 10%; /* #16181A Dark text for contrast on gold */
-    
-    --secondary: 210 7% 17%; /* #2A2D30 Subtle dark grey for secondary elements */
-    --secondary-foreground: 216 20% 85%; /* #D1D9E3 Lighter text for on-secondary */
-    
-    --muted: 216 8% 20%; /* #303438 For muted backgrounds/elements */
-    --muted-foreground: 216 20% 71%; /* #A8B2C0 Muted grey text */
-    
-    --accent: 40 50% 62%; /* #D4AF6A Slightly brighter/lighter gold for accents */
-    --accent-foreground: 210 7% 10%; /* #16181A Dark text for contrast on accent */
-    
-    --destructive: 0 63% 50%; /* #D32F2F Red for destructive actions */
-    --destructive-foreground: 216 20% 95%; /* #F0F2F5 Light text on destructive */
-    
-    --border: 216 8% 20%; /* #303438 Subtle borders */
-    --input: 210 7% 15%; /* #232629 Dark input background */
-    --ring: 40 45% 58%; /* #C9A461 Gold for focus rings */
-    
-    --chart-1: 40 45% 58%; /* Main Gold */
-    --chart-2: 40 35% 70%; /* Lighter Gold/Khaki */
-    --chart-3: 216 10% 80%; /* Light Grey/Off-white */
-    --chart-4: 210 5% 40%; /* Medium Grey */
-    --chart-5: 40 50% 50%; /* Darker/Desaturated Gold */
-
-    --radius: 0.5rem;
-
-    /* Sidebar specific variables for Golden Black Theme */
-    --sidebar-background: 210 6% 12%; /* #1C1F21 Slightly distinct dark for sidebar */
-    --sidebar-foreground: 216 20% 95%; /* #F0F2F5 */
-    --sidebar-primary: 40 45% 58%; /* #C9A461 Gold for active/primary items */
-    --sidebar-primary-foreground: 210 7% 10%; /* #16181A Dark text on gold */
-    --sidebar-accent: 40 50% 62%; /* #D4AF6A Brighter gold for hover/accent */
-    --sidebar-accent-foreground: 210 7% 10%; /* #16181A Dark text on accent */
-    --sidebar-border: 210 7% 17%; /* #2A2D30 Subtle border for sidebar elements */
-    --sidebar-ring: 40 45% 58%; /* #C9A461 Gold for focus rings */
+    /* Fallback Light Theme (Not primary, but good for safety) */
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 262.1 83.3% 57.8%; /* Violet 600 */
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 262.1 83.3% 57.8%;
+    --radius: 0.75rem; /* Rounded-xl look */
   }
 
   .dark {
-    /* If a separate dark mode is ever needed, it can be defined here. 
-       For now, the default IS the "golden black" dark theme.
-       You could copy the :root variables here if you want .dark to explicitly be this theme.
-    */
-    --background: 210 7% 10%;
-    --foreground: 216 20% 95%;
-    --card: 210 6% 13%;
-    --card-foreground: 216 20% 95%;
-    --popover: 210 6% 11%;
-    --popover-foreground: 216 20% 95%;
-    --primary: 40 45% 58%;
-    --primary-foreground: 210 7% 10%;
-    --secondary: 210 7% 17%;
-    --secondary-foreground: 216 20% 85%;
-    --muted: 216 8% 20%;
-    --muted-foreground: 216 20% 71%;
-    --accent: 40 50% 62%;
-    --accent-foreground: 210 7% 10%;
-    --destructive: 0 63% 50%;
-    --destructive-foreground: 216 20% 95%;
-    --border: 216 8% 20%;
-    --input: 210 7% 15%;
-    --ring: 40 45% 58%;
+    /* --- DEEP COSMOS THEME --- */
+    
+    /* Main Background: #02040a */
+    --background: 225 60% 2%; 
+    
+    /* Text: White */
+    --foreground: 210 40% 98%;
 
-    --chart-1: 40 45% 58%;
-    --chart-2: 40 35% 70%;
-    --chart-3: 216 10% 80%;
-    --chart-4: 210 5% 40%;
-    --chart-5: 40 50% 50%;
+    /* Cards: #0A0A0A (Matches your GlowingCard component) */
+    --card: 0 0% 4%; 
+    --card-foreground: 210 40% 98%;
 
-    --sidebar-background: 210 6% 12%;
-    --sidebar-foreground: 216 20% 95%;
-    --sidebar-primary: 40 45% 58%;
-    --sidebar-primary-foreground: 210 7% 10%;
-    --sidebar-accent: 40 50% 62%;
-    --sidebar-accent-foreground: 210 7% 10%;
-    --sidebar-border: 210 7% 17%;
-    --sidebar-ring: 40 45% 58%;
+    /* Popovers/Dropdowns: #050505 (Matches your Sidebar/Dropdowns) */
+    --popover: 0 0% 2%; 
+    --popover-foreground: 210 40% 98%;
+
+    /* Primary: Violet 600 (#7c3aed) - The main accent color */
+    --primary: 262.1 83.3% 57.8%;
+    --primary-foreground: 210 40% 98%;
+
+    /* Secondary: White/10 or Dark Grey for secondary buttons */
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    /* Muted: Gray Text */
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    /* Accent: Used for hover states (White/5 or Violet/10) */
+    --accent: 262.1 83.3% 57.8%; /* Violet base for alpha mixing */
+    --accent-foreground: 210 40% 98%;
+
+    /* Destructive: Red 500/900 mix */
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    /* Borders: White/10 (#ffffff1a) */
+    --border: 217.2 32.6% 17.5%; 
+    --input: 217.2 32.6% 17.5%;
+
+    /* Ring: Violet 500 for focus states */
+    --ring: 263.4 70% 50.4%;
+
+    /* Charts (Matching your dashboard stats) */
+    --chart-1: 262.1 83.3% 57.8%; /* Violet */
+    --chart-2: 142.1 76.2% 36.3%; /* Emerald */
+    --chart-3: 217.2 91.2% 59.8%; /* Blue */
+    --chart-4: 47.9 95.8% 53.1%; /* Amber */
+    --chart-5: 346.8 77.2% 49.8%; /* Rose */
+    
+    /* Sidebar Variables (Matching AppLayout) */
+    --sidebar-background: 225 60% 2%; /* Matches Main BG */
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 262.1 83.3% 57.8%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 262.1 83.3% 57.8%;
   }
+}
 
+@layer base {
   * {
     @apply border-border;
   }
   body {
     @apply bg-background text-foreground;
-    font-family: var(--font-sans); /* Ensure font is applied */
   }
+}
+
+/* --- CUSTOM SCROLLBAR (Chrome/Safari/Webkit) --- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #02040a; 
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a; 
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46; 
+}
+
+/* --- UTILITY ANIMATIONS --- */
+
+/* Slow spin for planets/radars */
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animate-spin-slow {
+  animation: spin-slow 12s linear infinite;
+}
+
+/* Gradient Text Animation */
+@keyframes gradient-x {
+  0%, 100% {
+      background-size: 200% 200%;
+      background-position: left center;
+  }
+  50% {
+      background-size: 200% 200%;
+      background-position: right center;
+  }
+}
+.animate-gradient-x {
+  animation: gradient-x 15s ease infinite;
 }
