@@ -6,9 +6,9 @@ import {
   Mic, MicOff, Video, VideoOff, MessagesSquare, Code as CodeIcon, Hand, Send, 
   Maximize, Minimize, User, Wifi, Loader2, AlertCircle, CameraOff, 
   Settings2, PhoneOff, Terminal, Activity, GripVertical, Monitor,
-  Cpu, Zap, Globe, Layers, Eye,
-  Target,
-  ChevronRight
+  Cpu, Zap, Globe, Layers, Eye, Play, X, Trash2,
+  ChevronRight,
+  Target
 } from 'lucide-react';
 import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
@@ -157,11 +157,16 @@ export default function InterviewRoomPage() {
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+
   
   // Layout State
   const [activeTab, setActiveTab] = useState<'chat' | 'whiteboard'>('chat');
   const [sidebarWidth, setSidebarWidth] = useState(400); // Initial width in px
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const [showTerminal, setShowTerminal] = useState(false);
+  const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
+  const [isCompiling, setIsCompiling] = useState(false);
   
   // Content State
   const [language, setLanguage] = useState<LanguageKey>('javascript');
@@ -177,8 +182,6 @@ export default function InterviewRoomPage() {
   const drawingContext = useRef<{ ctx: CanvasRenderingContext2D | null; isDrawing: boolean; lastX: number; lastY: number; color: string; lineWidth: number; }>({
      ctx: null, isDrawing: false, lastX: 0, lastY: 0, color: '#FFFFFF', lineWidth: 2,
   }).current;
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-
   
   // --- RESIZABLE LOGIC ---
   const startResizing = useCallback((mouseDownEvent: React.MouseEvent) => {
@@ -346,10 +349,78 @@ export default function InterviewRoomPage() {
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
       const newLang = e.target.value as LanguageKey;
       setLanguage(newLang);
-      sendWS({ type: 'code-update', code, language: newLang, senderId: user?.id }); 
+      
+      // Update template if the code is default
+      const currentDefault = LANGUAGES[language].snippet;
+      const newDefault = LANGUAGES[newLang].snippet;
+      
+      // If code looks like the default snippet for the old language, update it
+      // OR if it's practically empty
+      if (!code || code.trim() === currentDefault.trim() || code.length < 50) {
+          setCode(newDefault);
+          sendWS({ type: 'code-update', code: newDefault, language: newLang, senderId: user?.id });
+      } else {
+          sendWS({ type: 'code-update', code, language: newLang, senderId: user?.id }); 
+      }
+  };
+
+  const handleRunCode = () => {
+      setShowTerminal(true);
+      setIsCompiling(true);
+      setTerminalLogs(["> Initializing compiler environment...", "> Resolving dependencies..."]);
+      
+      // Simulation
+      setTimeout(() => {
+          setTerminalLogs(prev => [...prev, "> Compilation started..."]);
+      }, 800);
+
+      setTimeout(() => {
+          setTerminalLogs(prev => [...prev, `> Executing ${LANGUAGES[language].filename}...`, "", "Systems Online", "", "> Process exited with code 0"]);
+          setIsCompiling(false);
+      }, 2000);
   };
 
   // --- WHITEBOARD ---
+  const handleDraw = (data: any) => {
+      const ctx = canvasRef.current?.getContext('2d');
+      if (!ctx || !canvasRef.current) return;
+      if (data.type === 'clear') {
+          ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+          return;
+      }
+      ctx.beginPath();
+      ctx.moveTo(data.x0, data.y0);
+      ctx.lineTo(data.x1, data.y1);
+      ctx.strokeStyle = data.color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+  };
+
+  const startDraw = (e: any) => {
+      if(!drawingContext.ctx) drawingContext.ctx = canvasRef.current?.getContext('2d') || null;
+      drawingContext.isDrawing = true;
+      const rect = canvasRef.current!.getBoundingClientRect();
+      drawingContext.lastX = e.clientX - rect.left;
+      drawingContext.lastY = e.clientY - rect.top;
+  };
+
+  const doDraw = (e: any) => {
+      if (!drawingContext.isDrawing || !drawingContext.ctx) return;
+      const rect = canvasRef.current!.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      
+      drawingContext.ctx.beginPath();
+      drawingContext.ctx.moveTo(drawingContext.lastX, drawingContext.lastY);
+      drawingContext.ctx.lineTo(x, y);
+      drawingContext.ctx.strokeStyle = '#FFFFFF';
+      drawingContext.ctx.lineWidth = 2;
+      drawingContext.ctx.stroke();
+
+      sendWS({ type: 'whiteboard-update', data: { x0: drawingContext.lastX, y0: drawingContext.lastY, x1: x, y1: y, color: '#FFFFFF', type: 'draw' }, senderId: user?.id });
+      drawingContext.lastX = x;
+      drawingContext.lastY = y;
+  };
 
   // --- RENDER ---
   if (!interviewDetails) return (
@@ -478,7 +549,7 @@ export default function InterviewRoomPage() {
                 </div>
             </div>
 
-            {/* CENTER: CODE EDITOR */}
+            {/* CENTER: CODE EDITOR & TERMINAL */}
             <div className="flex-1 flex flex-col min-w-0 bg-[#1e1e1e] relative">
                 {/* Editor Toolbar */}
                 <div className="h-12 bg-[#181818] border-b border-[#2a2a2a] flex items-center justify-between px-4">
@@ -507,44 +578,80 @@ export default function InterviewRoomPage() {
                              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
                              CONNECTED
                          </div>
-                         <Button size="sm" className="h-7 text-xs bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-4">
-                            Run Code
+                         <Button 
+                           size="sm" 
+                           onClick={handleRunCode}
+                           className="h-7 text-xs bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-4 flex items-center gap-2"
+                         >
+                            <Play className="w-3 h-3 fill-current" /> Run Code
                          </Button>
                      </div>
                 </div>
 
-                <div className="flex-1 relative">
-                    <Editor
-                        height="100%"
-                        language={language}
-                        value={code}
-                        theme="vs-dark"
-                        onChange={(val) => {
-                            if (val) {
-                                setCode(val);
-                                sendWS({ type: 'code-update', code: val, language, senderId: user?.id });
-                            }
-                        }}
-                        options={{
-                            minimap: { enabled: false },
-                            fontSize: 14,
-                            fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                            scrollBeyondLastLine: false,
-                            automaticLayout: true,
-                            padding: { top: 16 },
-                            lineNumbersMinChars: 4,
-                            renderLineHighlight: 'all',
-                        }}
-                    />
+                <div className="flex-1 relative flex flex-col">
+                    <div className="flex-1 relative">
+                        <Editor
+                            height="100%"
+                            language={language}
+                            value={code}
+                            theme="vs-dark"
+                            onChange={(val) => {
+                                if (val) {
+                                    setCode(val);
+                                    sendWS({ type: 'code-update', code: val, language, senderId: user?.id });
+                                }
+                            }}
+                            options={{
+                                minimap: { enabled: false },
+                                fontSize: 14,
+                                fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                                scrollBeyondLastLine: false,
+                                automaticLayout: true,
+                                padding: { top: 16 },
+                                lineNumbersMinChars: 4,
+                                renderLineHighlight: 'all',
+                            }}
+                        />
+                    </div>
+                    
+                    {/* TERMINAL PANEL */}
+                    <AnimatePresence>
+                      {showTerminal && (
+                        <motion.div 
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 200, opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          className="bg-[#0c0c0c] border-t border-white/10 flex flex-col"
+                        >
+                           <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-[#151515]">
+                              <span className="text-xs font-mono text-gray-400 flex items-center gap-2">
+                                <Terminal className="w-3 h-3" /> Console Output
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <button onClick={() => setTerminalLogs([])} className="text-gray-500 hover:text-white p-1 rounded hover:bg-white/10"><Trash2 className="w-3 h-3"/></button>
+                                <button onClick={() => setShowTerminal(false)} className="text-gray-500 hover:text-white p-1 rounded hover:bg-white/10"><X className="w-3 h-3"/></button>
+                              </div>
+                           </div>
+                           <ScrollArea className="flex-1 p-4 font-mono text-xs">
+                              {terminalLogs.map((log, i) => (
+                                <div key={i} className={cn("mb-1", log.includes("Error") ? "text-red-400" : log.startsWith(">") ? "text-cyan-300" : "text-gray-300")}>
+                                  {log}
+                                </div>
+                              ))}
+                              {isCompiling && <span className="text-cyan-500 animate-pulse">_</span>}
+                           </ScrollArea>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                 </div>
             </div>
 
-            {/* DRAGGABLE DIVIDER (Visual only for now, functionality via react-resizable-panels recommended for prod) */}
+            {/* DRAGGABLE DIVIDER */}
             <div 
                 className="w-1 bg-[#2a2a2a] hover:bg-cyan-500 cursor-col-resize z-50 transition-colors flex flex-col justify-center items-center group"
                 onMouseDown={startResizing}
             >
-                <div className="h-8 w-1 bg-gray-600 rounded-full group-hover:bg-white" />
+                <div className="h-8 w-1 bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
             </div>
 
             {/* RIGHT: COLLAPSIBLE SIDEBAR */}
@@ -622,40 +729,10 @@ export default function InterviewRoomPage() {
                         </div>
                     ) : (
                         <div className="h-full relative bg-[#121212]">
-                            {/* Simple Canvas Placeholder - Replace with full canvas logic if needed */}
                             <canvas 
                                 ref={canvasRef}
-                                onMouseDown={(e) => {
-                                    if(!drawingContext.ctx) drawingContext.ctx = canvasRef.current?.getContext('2d') || null;
-                                    drawingContext.isDrawing = true;
-                                    const rect = canvasRef.current!.getBoundingClientRect();
-                                    drawingContext.lastX = e.clientX - rect.left;
-                                    drawingContext.lastY = e.clientY - rect.top;
-                                }}
-                                onMouseMove={(e) => {
-                                    if (!drawingContext.isDrawing || !drawingContext.ctx) return;
-                                    const rect = canvasRef.current!.getBoundingClientRect();
-                                    const x = e.clientX - rect.left;
-                                    const y = e.clientY - rect.top;
-                                    drawingContext.ctx.beginPath();
-                                    drawingContext.ctx.moveTo(drawingContext.lastX, drawingContext.lastY);
-                                    drawingContext.ctx.lineTo(x, y);
-                                    drawingContext.ctx.strokeStyle = '#fff';
-                                    drawingContext.ctx.lineWidth = 2;
-                                    drawingContext.ctx.stroke();
-                                    
-                                    // Send WS Update
-                                    if (wsRef.current?.readyState === WebSocket.OPEN) {
-                                        wsRef.current.send(JSON.stringify({
-                                            type: 'whiteboard-update',
-                                            data: { x0: drawingContext.lastX, y0: drawingContext.lastY, x1: x, y1: y, color: '#fff', type: 'draw' },
-                                            senderId: user?.id
-                                        }));
-                                    }
-                                    
-                                    drawingContext.lastX = x;
-                                    drawingContext.lastY = y;
-                                }}
+                                onMouseDown={startDraw}
+                                onMouseMove={doDraw}
                                 onMouseUp={() => drawingContext.isDrawing = false}
                                 onMouseLeave={() => drawingContext.isDrawing = false}
                                 width={sidebarWidth}
@@ -676,22 +753,6 @@ export default function InterviewRoomPage() {
     </div>
   );
 
-  // --- INTERNAL HELPERS ---
-  function handleDraw(data: any) {
-      const ctx = canvasRef.current?.getContext('2d');
-      if (!ctx || !canvasRef.current) return;
-      if (data.type === 'clear') {
-          ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-          return;
-      }
-      // Drawing logic for incoming data
-      ctx.beginPath();
-      ctx.moveTo(data.x0, data.y0);
-      ctx.lineTo(data.x1, data.y1);
-      ctx.strokeStyle = data.color || '#fff';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-  }
 }
 
 
