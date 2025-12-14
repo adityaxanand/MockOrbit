@@ -7,8 +7,8 @@ import {
   Maximize, Minimize, User, Wifi, Loader2, AlertCircle, CameraOff, 
   Settings2, PhoneOff, Terminal, Activity, GripVertical, Monitor,
   Cpu, Zap, Globe, Layers, Eye,
-  ChevronRight,
-  Target
+  Target,
+  ChevronRight
 } from 'lucide-react';
 import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
@@ -156,6 +156,7 @@ export default function InterviewRoomPage() {
   // Media State
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
   
   // Layout State
   const [activeTab, setActiveTab] = useState<'chat' | 'whiteboard'>('chat');
@@ -176,6 +177,8 @@ export default function InterviewRoomPage() {
   const drawingContext = useRef<{ ctx: CanvasRenderingContext2D | null; isDrawing: boolean; lastX: number; lastY: number; color: string; lineWidth: number; }>({
      ctx: null, isDrawing: false, lastX: 0, lastY: 0, color: '#FFFFFF', lineWidth: 2,
   }).current;
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+
   
   // --- RESIZABLE LOGIC ---
   const startResizing = useCallback((mouseDownEvent: React.MouseEvent) => {
@@ -184,7 +187,7 @@ export default function InterviewRoomPage() {
 
       const doDrag = (mouseMoveEvent: MouseEvent) => {
         const newWidth = startWidth - (mouseMoveEvent.clientX - startX);
-        if (newWidth > 250 && newWidth < 800) { // Limits
+        if (newWidth > 280 && newWidth < 800) { // Limits
           setSidebarWidth(newWidth);
         }
       };
@@ -209,6 +212,7 @@ export default function InterviewRoomPage() {
     if (wsRef.current) wsRef.current.close();
     wsRef.current = null;
     localStreamRef.current = null;
+    setRemoteStream(null);
   }, []);
 
   // --- INITIALIZATION ---
@@ -234,7 +238,7 @@ export default function InterviewRoomPage() {
                 localStreamRef.current = stream;
             } catch (err) {
                 console.error("Media access failed", err);
-                toast({ title: "Media Offline", description: "Camera/Mic unavailable.", variant: "destructive" });
+                setMediaError("Camera/Mic inaccessible");
             }
 
             // Setup WebSocket
@@ -252,7 +256,7 @@ export default function InterviewRoomPage() {
 
         } catch (error) {
             console.error(error);
-            toast({ title: "Init Failed", description: "Could not initialize room.", variant: "destructive" });
+            toast({ title: "Init Failed", description: "Could not initialize session.", variant: "destructive" });
         }
     };
     init();
@@ -297,16 +301,18 @@ export default function InterviewRoomPage() {
     }
   };
 
-  // --- WEBRTC ---
+  // --- WEBRTC HELPERS ---
   const createPeer = (target: string, caller: string, stream: MediaStream) => {
     const peer = new SimplePeer({ initiator: true, trickle: false, stream });
     peer.on('signal', signal => sendWS({ type: 'sending-signal', userToSignal: target, callerId: caller, signal }));
+    peer.on('stream', (stream) => { setRemoteStream(stream); }); 
     return peer;
   };
 
   const addPeer = (signal: any, caller: string, stream: MediaStream) => {
     const peer = new SimplePeer({ initiator: false, trickle: false, stream });
     peer.on('signal', sig => sendWS({ type: 'returning-signal', signal: sig, callerId: caller }));
+    peer.on('stream', (stream) => { setRemoteStream(stream); }); 
     peer.signal(signal);
     return peer;
   };
@@ -340,10 +346,10 @@ export default function InterviewRoomPage() {
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
       const newLang = e.target.value as LanguageKey;
       setLanguage(newLang);
-      // Optional: Ask confirmation before switching if code isn't empty?
-      // For now, just switch and maybe set boilerplate if empty
       sendWS({ type: 'code-update', code, language: newLang, senderId: user?.id }); 
   };
+
+  // --- WHITEBOARD ---
 
   // --- RENDER ---
   if (!interviewDetails) return (
@@ -430,7 +436,7 @@ export default function InterviewRoomPage() {
                 <div className="flex-1 flex flex-col gap-4">
                     {/* Peer Video */}
                     <div className="flex-1 relative">
-                        <VideoFrame stream={null} label={otherParticipant?.name || "Peer"} />
+                        <VideoFrame stream={remoteStream} label={otherParticipant?.name || "Peer"} />
                     </div>
                     {/* Self Video */}
                     <div className="h-48 relative">
@@ -687,7 +693,6 @@ export default function InterviewRoomPage() {
       ctx.stroke();
   }
 }
-
 
 
 
